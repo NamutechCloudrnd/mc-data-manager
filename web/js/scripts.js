@@ -270,8 +270,8 @@ function credentialFormSubmit() {
         const payload = new FormData(form);
         let tempObject = Object.fromEntries(payload);        
         let jsonData = {};        
-        const { cspType, name, accessKey, secretKey, gcpJson } = tempObject;
-        if (accessKey) {            
+        const { cspType, name, accessKey, secretKey, s3accessKey, s3secretKey, gcpJson } = tempObject;
+        if (cspType != "gcp") {            
             jsonData = {
                 cspType,
                 name,
@@ -285,6 +285,8 @@ function credentialFormSubmit() {
             jsonData = {
                 cspType,
                 name,
+                s3accessKey,
+                s3secretKey,
                 credentialJson: JSON.parse(gcpJson)
             }
         }
