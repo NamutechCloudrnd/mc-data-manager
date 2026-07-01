@@ -22,6 +22,10 @@ import (
 
 	"cloud.google.com/go/firestore"
 	"cloud.google.com/go/storage"
+	openapi "github.com/alibabacloud-go/darabonba-openapi/v2/client"
+	alibabards "github.com/alibabacloud-go/rds-20140815/v8/client"
+	alibabavpc "github.com/alibabacloud-go/vpc-20160428/v6/client"
+	"github.com/alibabacloud-go/tea/tea"
 	"github.com/aliyun/alibabacloud-oss-go-sdk-v2/oss"
 	osscred "github.com/aliyun/alibabacloud-oss-go-sdk-v2/oss/credentials"
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -30,8 +34,11 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/rds"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/NaverCloudPlatform/ncloud-sdk-go-v2/ncloud"
+	vmysql "github.com/NaverCloudPlatform/ncloud-sdk-go-v2/services/vmysql"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
+	sqladmin "google.golang.org/api/sqladmin/v1"
 	"google.golang.org/api/option"
 )
 
@@ -171,6 +178,14 @@ func NewAWSRDBClient(accesskey, secretkey, region string) (*rds.Client, error) {
 	return rds.NewFromConfig(*cfg), nil
 }
 
+func NewGCPSQLAdminClient(credJSON []byte) (*sqladmin.Service, error) {
+	svc, err := sqladmin.NewService(context.TODO(), option.WithCredentialsJSON(credJSON))
+	if err != nil {
+		return nil, err
+	}
+	return svc, nil
+}
+
 func NewGCPClient(credentialsJson string) (*storage.Client, error) {
 	var client *storage.Client
 	var err error
@@ -202,6 +217,46 @@ func NewAlibabaClient(region, accessKey, secretKey string) (*oss.Client, error) 
 
 	client := oss.NewClient(cfg)
 	return client, nil
+}
+
+// NewAlibabaRDBClient builds an ApsaraDB RDS client from static credentials and a region.
+func NewAlibabaRDBClient(region, accessKey, secretKey string) (*alibabards.Client, error) {
+	if accessKey == "" || secretKey == "" {
+		return nil, errors.New("accessKey and secretKey are required")
+	}
+	cfg := &openapi.Config{
+		AccessKeyId:     tea.String(accessKey),
+		AccessKeySecret: tea.String(secretKey),
+		RegionId:        tea.String(region),
+		Endpoint:        tea.String("rds." + region + ".aliyuncs.com"),
+	}
+	return alibabards.NewClient(cfg)
+}
+
+// NewAlibabaVPCClient builds an Alibaba VPC client from static credentials and a region.
+func NewAlibabaVPCClient(region, accessKey, secretKey string) (*alibabavpc.Client, error) {
+	if accessKey == "" || secretKey == "" {
+		return nil, errors.New("accessKey and secretKey are required")
+	}
+	cfg := &openapi.Config{
+		AccessKeyId:     tea.String(accessKey),
+		AccessKeySecret: tea.String(secretKey),
+		RegionId:        tea.String(region),
+		Endpoint:        tea.String("vpc." + region + ".aliyuncs.com"),
+	}
+	return alibabavpc.NewClient(cfg)
+}
+
+// NewNCPCloudMysqlClient builds an NCP Cloud DB for MySQL V2 API service from static credentials.
+func NewNCPCloudMysqlClient(accessKey, secretKey string) (*vmysql.V2ApiService, error) {
+	if accessKey == "" || secretKey == "" {
+		return nil, errors.New("accessKey and secretKey are required")
+	}
+	cfg := vmysql.NewConfiguration(&ncloud.APIKey{
+		AccessKey: accessKey,
+		SecretKey: secretKey,
+	})
+	return vmysql.NewAPIClient(cfg).V2Api, nil
 }
 
 func NewFireStoreClient(credentialsJson, projectID, databaseID string) (*firestore.Client, error) {

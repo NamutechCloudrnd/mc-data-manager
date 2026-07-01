@@ -99,7 +99,7 @@ func CreateRDBInstanceHandler(c echo.Context) error {
 	spec := rdbinstancepkg.CreateSpec{
 		InstanceID:       req.InstanceID,
 		InstanceClass:    req.InstanceClass,
-		Engine:           strings.ToLower(req.Engine),
+		Engine:           req.Engine,
 		EngineVersion:    req.EngineVersion,
 		MasterUsername:   req.MasterUsername,
 		MasterPassword:   req.MasterPassword,
