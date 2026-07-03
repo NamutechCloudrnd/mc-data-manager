@@ -133,7 +133,16 @@ func (p *AlibabaProvider) createVPCAndVSwitch() (vSwitchInfo, error) {
 	if zonesResp == nil || zonesResp.Body == nil || zonesResp.Body.Zones == nil || len(zonesResp.Body.Zones.Zone) == 0 {
 		return vSwitchInfo{}, fmt.Errorf("no zones found in region %s", p.region)
 	}
-	zoneID := tea.StringValue(zonesResp.Body.Zones.Zone[0].ZoneId)
+	var zoneID string
+	for _, z := range zonesResp.Body.Zones.Zone {
+		if id := tea.StringValue(z.ZoneId); isUsableZone(id) {
+			zoneID = id
+			break
+		}
+	}
+	if zoneID == "" {
+		return vSwitchInfo{}, fmt.Errorf("no usable single-AZ zone found in region %s", p.region)
+	}
 
 	vswResp, err := p.vpcClient.CreateVSwitch(&alibabavpc.CreateVSwitchRequest{
 		VpcId:     tea.String(vpcID),
@@ -409,11 +418,20 @@ func extractEngineVersions(body *alibabards.DescribeAvailableZonesResponseBody, 
 	return out
 }
 
-// zoneIDs returns the distinct, sorted zone ids from a DescribeAvailableZones response.
+// isUsableZone returns false for multi-AZ aggregated zones (e.g. "ap-northeast-1MAZ1(a,b)"),
+// which cannot be used for single-resource placement like VSwitches or instance classes.
+func isUsableZone(zoneID string) bool {
+	return !strings.Contains(zoneID, "(") && !strings.Contains(zoneID, "MAZ")
+}
+
+// zoneIDs returns the distinct, sorted single-AZ zone ids from a DescribeAvailableZones response.
 func zoneIDs(body *alibabards.DescribeAvailableZonesResponseBody) []string {
 	ids := make([]string, 0, len(body.AvailableZones))
 	for _, zone := range body.AvailableZones {
-		ids = append(ids, tea.StringValue(zone.ZoneId))
+		id := tea.StringValue(zone.ZoneId)
+		if isUsableZone(id) {
+			ids = append(ids, id)
+		}
 	}
 	return distinctSorted(ids)
 }

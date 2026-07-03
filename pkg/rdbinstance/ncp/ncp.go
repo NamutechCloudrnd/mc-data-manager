@@ -8,18 +8,140 @@ package ncp
 import (
 	"context"
 	"fmt"
+	"sort"
+	"time"
 
 	"github.com/NaverCloudPlatform/ncloud-sdk-go-v2/ncloud"
+	ncpvpc "github.com/NaverCloudPlatform/ncloud-sdk-go-v2/services/vpc"
+	ncpvserver "github.com/NaverCloudPlatform/ncloud-sdk-go-v2/services/vserver"
 	vmysql "github.com/NaverCloudPlatform/ncloud-sdk-go-v2/services/vmysql"
 	"github.com/cloud-barista/mc-data-manager/config"
 	"github.com/cloud-barista/mc-data-manager/models"
 	"github.com/cloud-barista/mc-data-manager/pkg/rdbinstance"
 )
 
+const (
+	ncpVPCCIDR    = "172.16.0.0/16"
+	ncpSubnetCIDR = "172.16.0.0/24"
+)
+
 // NCPProvider implements rdbinstance.Provider for NCP Cloud DB for MySQL.
 type NCPProvider struct {
-	api    *vmysql.V2ApiService
-	region string
+	api        *vmysql.V2ApiService
+	vpcApi     *ncpvpc.V2ApiService
+	vserverApi *ncpvserver.V2ApiService
+	region     string
+	accessKey  string
+	secretKey  string
+}
+
+// subnetInfo holds SubnetNo and VpcNo resolved for instance creation.
+type subnetInfo struct {
+	subnetNo string
+	vpcNo    string
+}
+
+// resolveSubnet returns the first available public subnet in the region.
+// If none exists, a new VPC and public subnet are created.
+func (p *NCPProvider) resolveSubnet() (subnetInfo, error) {
+	resp, err := p.vpcApi.GetSubnetList(&ncpvpc.GetSubnetListRequest{
+		RegionCode:     ncloud.String(p.region),
+		SubnetTypeCode: ncloud.String("PUBLIC"),
+		UsageTypeCode:	ncloud.String("GEN"),
+	})
+	if err != nil {
+		return subnetInfo{}, fmt.Errorf("failed to list public subnets: %w", err)
+	}
+	if resp != nil && len(resp.SubnetList) > 0 {
+		first := resp.SubnetList[0]
+		return subnetInfo{
+			subnetNo: ncloud.StringValue(first.SubnetNo),
+			vpcNo:    ncloud.StringValue(first.VpcNo),
+		}, nil
+	}
+	return p.createVPCAndSubnet()
+}
+
+// waitVPCAvailable polls GetVpcList until VpcStatus.Code is "RUN", timing out after 60s.
+func (p *NCPProvider) waitVPCAvailable(vpcNo string) error {
+	deadline := time.Now().Add(60 * time.Second)
+	for time.Now().Before(deadline) {
+		resp, err := p.vpcApi.GetVpcList(&ncpvpc.GetVpcListRequest{
+			RegionCode: ncloud.String(p.region),
+			VpcNoList:  []*string{ncloud.String(vpcNo)},
+		})
+		if err != nil {
+			return fmt.Errorf("failed to describe VPC status: %w", err)
+		}
+		if resp != nil && len(resp.VpcList) > 0 && resp.VpcList[0].VpcStatus != nil {
+			if ncloud.StringValue(resp.VpcList[0].VpcStatus.Code) == "RUN" {
+				return nil
+			}
+		}
+		time.Sleep(3 * time.Second)
+	}
+	return fmt.Errorf("VPC %s did not reach RUN status within 60s", vpcNo)
+}
+
+// createVPCAndSubnet creates a new VPC and private subnet for Cloud MySQL.
+func (p *NCPProvider) createVPCAndSubnet() (subnetInfo, error) {
+	vpcResp, err := p.vpcApi.CreateVpc(&ncpvpc.CreateVpcRequest{
+		RegionCode:    ncloud.String(p.region),
+		Ipv4CidrBlock: ncloud.String(ncpVPCCIDR),
+	})
+	if err != nil {
+		return subnetInfo{}, fmt.Errorf("failed to create NCP VPC: %w", err)
+	}
+	if vpcResp == nil || len(vpcResp.VpcList) == 0 || vpcResp.VpcList[0].VpcNo == nil {
+		return subnetInfo{}, fmt.Errorf("create NCP VPC returned no VPC id")
+	}
+	vpcNo := ncloud.StringValue(vpcResp.VpcList[0].VpcNo)
+
+	if err := p.waitVPCAvailable(vpcNo); err != nil {
+		return subnetInfo{}, err
+	}
+
+	zoneResp, err := p.vserverApi.GetZoneList(&ncpvserver.GetZoneListRequest{
+		RegionCode: ncloud.String(p.region),
+	})
+	if err != nil {
+		return subnetInfo{}, fmt.Errorf("failed to list NCP zones: %w", err)
+	}
+	if zoneResp == nil || len(zoneResp.ZoneList) == 0 {
+		return subnetInfo{}, fmt.Errorf("no zones found in region %s", p.region)
+	}
+	zoneCode := ncloud.StringValue(zoneResp.ZoneList[0].ZoneCode)
+
+	aclResp, err := p.vpcApi.GetNetworkAclList(&ncpvpc.GetNetworkAclListRequest{
+		RegionCode: ncloud.String(p.region),
+		VpcNo:      ncloud.String(vpcNo),
+	})
+	if err != nil {
+		return subnetInfo{}, fmt.Errorf("failed to list NCP network ACLs: %w", err)
+	}
+	if aclResp == nil || len(aclResp.NetworkAclList) == 0 {
+		return subnetInfo{}, fmt.Errorf("no network ACL found for VPC %s", vpcNo)
+	}
+	networkAclNo := ncloud.StringValue(aclResp.NetworkAclList[0].NetworkAclNo)
+
+	subnetResp, err := p.vpcApi.CreateSubnet(&ncpvpc.CreateSubnetRequest{
+		RegionCode:    ncloud.String(p.region),
+		VpcNo:         ncloud.String(vpcNo),
+		ZoneCode:      ncloud.String(zoneCode),
+		NetworkAclNo:  ncloud.String(networkAclNo),
+		Subnet:        ncloud.String(ncpSubnetCIDR),
+		SubnetTypeCode: ncloud.String("PUBLIC"),
+	})
+	if err != nil {
+		return subnetInfo{}, fmt.Errorf("failed to create NCP subnet: %w", err)
+	}
+	if subnetResp == nil || len(subnetResp.SubnetList) == 0 || subnetResp.SubnetList[0].SubnetNo == nil {
+		return subnetInfo{}, fmt.Errorf("create NCP subnet returned no subnet id")
+	}
+	return subnetInfo{
+		subnetNo: ncloud.StringValue(subnetResp.SubnetList[0].SubnetNo),
+		vpcNo:    vpcNo,
+	}, nil
 }
 
 // New builds an NCP Cloud DB provider from static credentials and a region.
@@ -28,7 +150,15 @@ func New(accessKey, secretKey, region string) (rdbinstance.Provider, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create NCP Cloud MySQL client: %w", err)
 	}
-	return &NCPProvider{api: api, region: region}, nil
+	vpcApi, err := config.NewNCPVPCClient(accessKey, secretKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create NCP VPC client: %w", err)
+	}
+	vserverApi, err := config.NewNCPVServerClient(accessKey, secretKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create NCP VServer client: %w", err)
+	}
+	return &NCPProvider{api: api, vpcApi: vpcApi, vserverApi: vserverApi, region: region, accessKey: accessKey, secretKey: secretKey}, nil
 }
 
 // normalizeStatus maps NCP CloudMysqlInstanceStatusName to the unified status.
@@ -72,20 +202,190 @@ func (p *NCPProvider) DeleteInstance(_ context.Context, instanceID string) (mode
 	}, nil
 }
 
-// --- Not implemented yet (interface stubs) ---
+func toDBInstance(inst *vmysql.CloudMysqlInstance, region string) models.DBInstance {
+	instanceNo := ncloud.StringValue(inst.CloudMysqlInstanceNo)
+	name := instanceNo
+	if inst.CloudMysqlServiceName != nil && *inst.CloudMysqlServiceName != "" {
+		name = *inst.CloudMysqlServiceName
+	}
+	status := ""
+	if inst.CloudMysqlInstanceStatusName != nil {
+		status = normalizeStatus(*inst.CloudMysqlInstanceStatusName)
+	}
+	var port int32
+	if inst.CloudMysqlPort != nil {
+		port = *inst.CloudMysqlPort
+	}
+	var endpoint, instanceClass string
+	if len(inst.CloudMysqlServerInstanceList) > 0 {
+		srv := inst.CloudMysqlServerInstanceList[0]
+		if ncloud.BoolValue(srv.IsPublicSubnet) && srv.PublicDomain != nil {
+			endpoint = *srv.PublicDomain
+		} else if srv.PrivateDomain != nil {
+			endpoint = *srv.PrivateDomain
+		}
+		instanceClass = ncloud.StringValue(srv.CloudMysqlProductCode)
+	}
+	return models.DBInstance{
+		Provider:      "ncp",
+		InstanceID:    instanceNo,
+		Name:          name,
+		Status:        status,
+		Region:        region,
+		Engine:        "mysql",
+		EngineVersion: ncloud.StringValue(inst.EngineVersion),
+		Endpoint:      endpoint,
+		Port:          port,
+		InstanceClass: instanceClass,
+	}
+}
+
+func (p *NCPProvider) instanceDetail(instanceNo string) (*vmysql.CloudMysqlInstance, error) {
+	resp, err := p.api.GetCloudMysqlInstanceDetail(&vmysql.GetCloudMysqlInstanceDetailRequest{
+		RegionCode:           ncloud.String(p.region),
+		CloudMysqlInstanceNo: ncloud.String(instanceNo),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to describe NCP Cloud MySQL instance %s: %w", instanceNo, err)
+	}
+	if resp == nil || len(resp.CloudMysqlInstanceList) == 0 {
+		return nil, fmt.Errorf("no detail returned for NCP Cloud MySQL instance %s", instanceNo)
+	}
+	return resp.CloudMysqlInstanceList[0], nil
+}
 
 func (p *NCPProvider) ListInstances(_ context.Context) ([]models.DBInstance, error) {
-	return nil, fmt.Errorf("NCP ListInstances: not implemented yet")
+	resp, err := p.api.GetCloudMysqlInstanceList(&vmysql.GetCloudMysqlInstanceListRequest{
+		RegionCode: ncloud.String(p.region),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list NCP Cloud MySQL instances: %w", err)
+	}
+	out := []models.DBInstance{}
+	for _, inst := range resp.CloudMysqlInstanceList {
+		instanceNo := ncloud.StringValue(inst.CloudMysqlInstanceNo)
+		detail, err := p.instanceDetail(instanceNo)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, toDBInstance(detail, p.region))
+	}
+	return out, nil
 }
 
-func (p *NCPProvider) CreateInstance(_ context.Context, _ rdbinstance.CreateSpec) (models.DBInstance, error) {
-	return models.DBInstance{}, fmt.Errorf("NCP CreateInstance: not implemented yet")
+func (p *NCPProvider) CreateInstance(_ context.Context, spec rdbinstance.CreateSpec) (models.DBInstance, error) {
+	sub, err := p.resolveSubnet()
+	if err != nil {
+		return models.DBInstance{}, err
+	}
+	resp, err := p.api.CreateCloudMysqlInstance(&vmysql.CreateCloudMysqlInstanceRequest{
+		RegionCode:                 ncloud.String(p.region),
+		VpcNo:                      ncloud.String(sub.vpcNo),
+		SubnetNo:                   ncloud.String(sub.subnetNo),
+		CloudMysqlServiceName:      ncloud.String(spec.InstanceID),
+		CloudMysqlServerNamePrefix: ncloud.String(spec.InstanceID),
+		CloudMysqlUserName:         ncloud.String(spec.MasterUsername),
+		CloudMysqlUserPassword:     ncloud.String(spec.MasterPassword),
+		HostIp:                     ncloud.String("%"),
+		CloudMysqlDatabaseName:     ncloud.String(spec.InstanceID + "-default"),
+		EngineVersionCode:          ncloud.String(spec.EngineVersion),
+		CloudMysqlProductCode:      ncloud.String(spec.InstanceClass),
+		IsBackup:                   ncloud.Bool(false),
+		IsHa: 						ncloud.Bool(false),
+	})
+	if err != nil {
+		return models.DBInstance{}, fmt.Errorf("failed to create NCP Cloud MySQL instance: %w", err)
+	}
+	instanceNo := ""
+	status := "creating"
+	if resp != nil && len(resp.CloudMysqlInstanceList) > 0 {
+		inst := resp.CloudMysqlInstanceList[0]
+		if inst.CloudMysqlInstanceNo != nil {
+			instanceNo = *inst.CloudMysqlInstanceNo
+		}
+		if inst.CloudMysqlInstanceStatusName != nil {
+			status = normalizeStatus(*inst.CloudMysqlInstanceStatusName)
+		}
+	}
+	// go p.provisionInBackground(instanceNo)
+
+	return models.DBInstance{
+		Provider:      "ncp",
+		InstanceID:    instanceNo,
+		Name:          spec.InstanceID,
+		Status:        status,
+		Region:        p.region,
+		Engine:        "mysql",
+		EngineVersion: spec.EngineVersion,
+		InstanceClass: spec.InstanceClass,
+	}, nil
 }
 
+// ListEngineVersions returns the available MySQL engine versions from the image product list.
+// Each unique EngineVersionCode (e.g. "8.0", "5.7") is returned once.
 func (p *NCPProvider) ListEngineVersions(_ context.Context) ([]models.DBEngineVersion, error) {
-	return nil, fmt.Errorf("NCP ListEngineVersions: not implemented yet")
+	resp, err := p.api.GetCloudMysqlImageProductList(&vmysql.GetCloudMysqlImageProductListRequest{
+		RegionCode:     ncloud.String(p.region),
+		GenerationCode: ncloud.String("G3"),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list NCP Cloud MySQL image products: %w", err)
+	}
+
+	seen := map[string]struct{}{}
+	var out []models.DBEngineVersion
+	for _, product := range resp.ProductList {
+		if product.EngineVersionCode == nil || *product.EngineVersionCode == "" {
+			continue
+		}
+		code := *product.EngineVersionCode
+		if _, ok := seen[code]; ok {
+			continue
+		}
+		seen[code] = struct{}{}
+		out = append(out, models.DBEngineVersion{Engine: "mysql", EngineVersion: code})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].EngineVersion < out[j].EngineVersion })
+	return out, nil
 }
 
-func (p *NCPProvider) ListInstanceClasses(_ context.Context, _, _ string) ([]string, error) {
-	return nil, fmt.Errorf("NCP ListInstanceClasses: not implemented yet")
+// ListInstanceClasses returns available server product codes for the given engine version.
+// NCP requires an image product code to query server products, so the image list is
+// fetched first to find a matching product code for the requested engineVersion.
+func (p *NCPProvider) ListInstanceClasses(_ context.Context, _, engineVersion string) ([]string, error) {
+	imgResp, err := p.api.GetCloudMysqlImageProductList(&vmysql.GetCloudMysqlImageProductListRequest{
+		RegionCode:     ncloud.String(p.region),
+		GenerationCode: ncloud.String("G3"),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list NCP Cloud MySQL image products: %w", err)
+	}
+
+	var imageProductCode string
+	for _, product := range imgResp.ProductList {
+		if product.EngineVersionCode != nil && *product.EngineVersionCode == engineVersion && product.ProductCode != nil {
+			imageProductCode = *product.ProductCode
+			break
+		}
+	}
+	if imageProductCode == "" {
+		return nil, fmt.Errorf("no NCP Cloud MySQL image found for engineVersion %q", engineVersion)
+	}
+
+	prodResp, err := p.api.GetCloudMysqlProductList(&vmysql.GetCloudMysqlProductListRequest{
+		RegionCode:                 ncloud.String(p.region),
+		CloudMysqlImageProductCode: ncloud.String(imageProductCode),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list NCP Cloud MySQL server products: %w", err)
+	}
+
+	var out []string
+	for _, product := range prodResp.ProductList {
+		if product.ProductCode != nil && *product.ProductCode != "" {
+			out = append(out, *product.ProductCode)
+		}
+	}
+	sort.Strings(out)
+	return out, nil
 }

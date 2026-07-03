@@ -35,6 +35,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/rds"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/NaverCloudPlatform/ncloud-sdk-go-v2/ncloud"
+	ncpvpc "github.com/NaverCloudPlatform/ncloud-sdk-go-v2/services/vpc"
+	ncpvserver "github.com/NaverCloudPlatform/ncloud-sdk-go-v2/services/vserver"
 	vmysql "github.com/NaverCloudPlatform/ncloud-sdk-go-v2/services/vmysql"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -257,6 +259,30 @@ func NewNCPCloudMysqlClient(accessKey, secretKey string) (*vmysql.V2ApiService, 
 		SecretKey: secretKey,
 	})
 	return vmysql.NewAPIClient(cfg).V2Api, nil
+}
+
+// NewNCPVPCClient builds an NCP VPC V2 API service from static credentials.
+func NewNCPVPCClient(accessKey, secretKey string) (*ncpvpc.V2ApiService, error) {
+	if accessKey == "" || secretKey == "" {
+		return nil, errors.New("accessKey and secretKey are required")
+	}
+	cfg := ncpvpc.NewConfiguration(&ncloud.APIKey{
+		AccessKey: accessKey,
+		SecretKey: secretKey,
+	})
+	return ncpvpc.NewAPIClient(cfg).V2Api, nil
+}
+
+// NewNCPVServerClient builds an NCP VServer V2 API service from static credentials.
+func NewNCPVServerClient(accessKey, secretKey string) (*ncpvserver.V2ApiService, error) {
+	if accessKey == "" || secretKey == "" {
+		return nil, errors.New("accessKey and secretKey are required")
+	}
+	cfg := ncpvserver.NewConfiguration(&ncloud.APIKey{
+		AccessKey: accessKey,
+		SecretKey: secretKey,
+	})
+	return ncpvserver.NewAPIClient(cfg).V2Api, nil
 }
 
 func NewFireStoreClient(credentialsJson, projectID, databaseID string) (*firestore.Client, error) {
