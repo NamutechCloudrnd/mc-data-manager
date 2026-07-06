@@ -1,10 +1,3 @@
-// Package alibaba implements rdbinstance.Provider for Alibaba ApsaraDB RDS.
-//
-// Alibaba differs from AWS: the master account and the public endpoint are NOT
-// created by CreateDBInstance. After the instance reaches the Running state we
-// additionally call CreateAccount and AllocateInstancePublicConnection. Because
-// provisioning takes minutes, those two steps run in the background (see
-// background.go); CreateInstance returns as soon as the instance is requested.
 package alibaba
 
 import (
@@ -13,13 +6,13 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 
 	alibabards "github.com/alibabacloud-go/rds-20140815/v8/client"
 	"github.com/alibabacloud-go/tea/tea"
 	alibabavpc "github.com/alibabacloud-go/vpc-20160428/v6/client"
 	"github.com/cloud-barista/mc-data-manager/config"
 	"github.com/cloud-barista/mc-data-manager/models"
+	alibabacommon "github.com/cloud-barista/mc-data-manager/pkg/alibaba"
 	"github.com/cloud-barista/mc-data-manager/pkg/rdbinstance"
 )
 
@@ -50,121 +43,10 @@ func New(accessKey, secretKey, region string) (rdbinstance.Provider, error) {
 	return &AlibabaProvider{client: client, vpcClient: vpcClient, region: region}, nil
 }
 
-// vSwitchInfo holds the VSwitchId and VpcId resolved for instance creation.
-type vSwitchInfo struct {
-	vSwitchID string
-	vpcID     string
-}
-
-// vpcCIDR and vSwitchCIDR are fixed address ranges used when creating a new VPC and
-// VSwitch. They are chosen to avoid overlap with common on-premises ranges.
-const (
-	vpcCIDR     = "172.16.0.0/16"
-	vSwitchCIDR = "172.16.0.0/24"
-)
-
-// resolveVSwitch returns the first available VSwitch in the region.
-// If none exists, it creates a new VPC and VSwitch and returns those IDs.
-func (p *AlibabaProvider) resolveVSwitch() (vSwitchInfo, error) {
-	resp, err := p.vpcClient.DescribeVSwitches(&alibabavpc.DescribeVSwitchesRequest{
-		RegionId: tea.String(p.region),
-	})
-	if err != nil {
-		return vSwitchInfo{}, fmt.Errorf("failed to describe VSwitches: %w", err)
-	}
-	if resp != nil && resp.Body != nil && resp.Body.VSwitches != nil && len(resp.Body.VSwitches.VSwitch) > 0 {
-		first := resp.Body.VSwitches.VSwitch[0]
-		return vSwitchInfo{
-			vSwitchID: tea.StringValue(first.VSwitchId),
-			vpcID:     tea.StringValue(first.VpcId),
-		}, nil
-	}
-	return p.createVPCAndVSwitch()
-}
-
-// waitVPCAvailable polls DescribeVpcs until the VPC reaches "Available" status,
-// timing out after 60 seconds. VPC creation is asynchronous; creating a VSwitch
-// before the VPC is available returns IncorrectVpcStatus.
-func (p *AlibabaProvider) waitVPCAvailable(vpcID string) error {
-	deadline := time.Now().Add(60 * time.Second)
-	for time.Now().Before(deadline) {
-		resp, err := p.vpcClient.DescribeVpcs(&alibabavpc.DescribeVpcsRequest{
-			RegionId: tea.String(p.region),
-			VpcId:    tea.String(vpcID),
-		})
-		if err != nil {
-			return fmt.Errorf("failed to describe VPC status: %w", err)
-		}
-		if resp != nil && resp.Body != nil && resp.Body.Vpcs != nil && len(resp.Body.Vpcs.Vpc) > 0 {
-			if tea.StringValue(resp.Body.Vpcs.Vpc[0].Status) == "Available" {
-				return nil
-			}
-		}
-		time.Sleep(3 * time.Second)
-	}
-	return fmt.Errorf("VPC %s did not reach Available status within 60s", vpcID)
-}
-
-// createVPCAndVSwitch creates a new VPC and a VSwitch inside it, returning the IDs.
-// The ZoneId is resolved via VPC DescribeZones so no engine context is required.
-func (p *AlibabaProvider) createVPCAndVSwitch() (vSwitchInfo, error) {
-	vpcResp, err := p.vpcClient.CreateVpc(&alibabavpc.CreateVpcRequest{
-		RegionId:  tea.String(p.region),
-		CidrBlock: tea.String(vpcCIDR),
-	})
-	if err != nil {
-		return vSwitchInfo{}, fmt.Errorf("failed to create VPC: %w", err)
-	}
-	if vpcResp == nil || vpcResp.Body == nil || tea.StringValue(vpcResp.Body.VpcId) == "" {
-		return vSwitchInfo{}, fmt.Errorf("create VPC returned no VPC id")
-	}
-	vpcID := tea.StringValue(vpcResp.Body.VpcId)
-
-	if err := p.waitVPCAvailable(vpcID); err != nil {
-		return vSwitchInfo{}, err
-	}
-
-	zonesResp, err := p.vpcClient.DescribeZones(&alibabavpc.DescribeZonesRequest{
-		RegionId: tea.String(p.region),
-	})
-	if err != nil {
-		return vSwitchInfo{}, fmt.Errorf("failed to describe zones: %w", err)
-	}
-	if zonesResp == nil || zonesResp.Body == nil || zonesResp.Body.Zones == nil || len(zonesResp.Body.Zones.Zone) == 0 {
-		return vSwitchInfo{}, fmt.Errorf("no zones found in region %s", p.region)
-	}
-	var zoneID string
-	for _, z := range zonesResp.Body.Zones.Zone {
-		if id := tea.StringValue(z.ZoneId); isUsableZone(id) {
-			zoneID = id
-			break
-		}
-	}
-	if zoneID == "" {
-		return vSwitchInfo{}, fmt.Errorf("no usable single-AZ zone found in region %s", p.region)
-	}
-
-	vswResp, err := p.vpcClient.CreateVSwitch(&alibabavpc.CreateVSwitchRequest{
-		VpcId:     tea.String(vpcID),
-		ZoneId:    tea.String(zoneID),
-		CidrBlock: tea.String(vSwitchCIDR),
-	})
-	if err != nil {
-		return vSwitchInfo{}, fmt.Errorf("failed to create VSwitch: %w", err)
-	}
-	if vswResp == nil || vswResp.Body == nil || tea.StringValue(vswResp.Body.VSwitchId) == "" {
-		return vSwitchInfo{}, fmt.Errorf("create VSwitch returned no VSwitch id")
-	}
-	return vSwitchInfo{
-		vSwitchID: tea.StringValue(vswResp.Body.VSwitchId),
-		vpcID:     vpcID,
-	}, nil
-}
-
 // buildCreateRequest maps a CSP-agnostic CreateSpec to an Alibaba
 // CreateDBInstanceRequest. Network type, pay type and the security IP list are
 // fixed here (not taken from the request body).
-func buildCreateRequest(spec rdbinstance.CreateSpec, region string, vsw vSwitchInfo) *alibabards.CreateDBInstanceRequest {
+func buildCreateRequest(spec rdbinstance.CreateSpec, region string, vsw alibabacommon.VSwitchInfo) *alibabards.CreateDBInstanceRequest {
 	return &alibabards.CreateDBInstanceRequest{
 		Engine:                tea.String(spec.Engine),
 		EngineVersion:         tea.String(spec.EngineVersion),
@@ -173,8 +55,8 @@ func buildCreateRequest(spec rdbinstance.CreateSpec, region string, vsw vSwitchI
 		RegionId:              tea.String(region),
 		DBInstanceDescription: tea.String(spec.InstanceID),
 		InstanceNetworkType:   tea.String("VPC"),
-		VPCId:                 tea.String(vsw.vpcID),
-		VSwitchId:             tea.String(vsw.vSwitchID),
+		VPCId:                 tea.String(vsw.VpcID),
+		VSwitchId:             tea.String(vsw.VSwitchID),
 		DBInstanceNetType:     tea.String("Internet"),
 		PayType:               tea.String("Postpaid"),
 		SecurityIPList:        tea.String("0.0.0.0/0"),
@@ -204,7 +86,7 @@ func toCreatedDBInstance(spec rdbinstance.CreateSpec, body *alibabards.CreateDBI
 // CreateInstance provisions a new RDS instance, then launches the background
 // account + public-endpoint provisioning. Returns the instance in "Creating" state.
 func (p *AlibabaProvider) CreateInstance(ctx context.Context, spec rdbinstance.CreateSpec) (models.DBInstance, error) {
-	vsw, err := p.resolveVSwitch()
+	vsw, err := alibabacommon.ResolveVSwitch(p.vpcClient, p.region)
 	if err != nil {
 		return models.DBInstance{}, err
 	}
@@ -418,18 +300,12 @@ func extractEngineVersions(body *alibabards.DescribeAvailableZonesResponseBody, 
 	return out
 }
 
-// isUsableZone returns false for multi-AZ aggregated zones (e.g. "ap-northeast-1MAZ1(a,b)"),
-// which cannot be used for single-resource placement like VSwitches or instance classes.
-func isUsableZone(zoneID string) bool {
-	return !strings.Contains(zoneID, "(") && !strings.Contains(zoneID, "MAZ")
-}
-
 // zoneIDs returns the distinct, sorted single-AZ zone ids from a DescribeAvailableZones response.
 func zoneIDs(body *alibabards.DescribeAvailableZonesResponseBody) []string {
 	ids := make([]string, 0, len(body.AvailableZones))
 	for _, zone := range body.AvailableZones {
 		id := tea.StringValue(zone.ZoneId)
-		if isUsableZone(id) {
+		if alibabacommon.IsUsableZone(id) {
 			ids = append(ids, id)
 		}
 	}

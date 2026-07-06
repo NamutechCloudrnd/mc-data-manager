@@ -23,6 +23,8 @@ import (
 	"cloud.google.com/go/firestore"
 	"cloud.google.com/go/storage"
 	openapi "github.com/alibabacloud-go/darabonba-openapi/v2/client"
+	openapiV1 "github.com/alibabacloud-go/darabonba-openapi/client"
+	alibabadds "github.com/alibabacloud-go/dds-20151201/client"
 	alibabards "github.com/alibabacloud-go/rds-20140815/v8/client"
 	alibabavpc "github.com/alibabacloud-go/vpc-20160428/v6/client"
 	"github.com/alibabacloud-go/tea/tea"
@@ -40,6 +42,7 @@ import (
 	vmysql "github.com/NaverCloudPlatform/ncloud-sdk-go-v2/services/vmysql"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
+	firestorev1 "google.golang.org/api/firestore/v1"
 	sqladmin "google.golang.org/api/sqladmin/v1"
 	"google.golang.org/api/option"
 )
@@ -221,6 +224,20 @@ func NewAlibabaClient(region, accessKey, secretKey string) (*oss.Client, error) 
 	return client, nil
 }
 
+// NewAlibabaDDSClient builds an ApsaraDB for MongoDB (DDS) client from static credentials and a region.
+func NewAlibabaDDSClient(region, accessKey, secretKey string) (*alibabadds.Client, error) {
+	if accessKey == "" || secretKey == "" {
+		return nil, errors.New("accessKey and secretKey are required")
+	}
+	cfg := &openapiV1.Config{
+		AccessKeyId:     tea.String(accessKey),
+		AccessKeySecret: tea.String(secretKey),
+		RegionId:        tea.String(region),
+		Endpoint:        tea.String("mongodb." + region + ".aliyuncs.com"),
+	}
+	return alibabadds.NewClient(cfg)
+}
+
 // NewAlibabaRDBClient builds an ApsaraDB RDS client from static credentials and a region.
 func NewAlibabaRDBClient(region, accessKey, secretKey string) (*alibabards.Client, error) {
 	if accessKey == "" || secretKey == "" {
@@ -283,6 +300,16 @@ func NewNCPVServerClient(accessKey, secretKey string) (*ncpvserver.V2ApiService,
 		SecretKey: secretKey,
 	})
 	return ncpvserver.NewAPIClient(cfg).V2Api, nil
+}
+
+// NewGCPFirestoreAdminClient builds a Firestore Admin API client from a service
+// account credentials JSON. Used for managing Firestore databases (instances).
+func NewGCPFirestoreAdminClient(credJSON []byte) (*firestorev1.Service, error) {
+	svc, err := firestorev1.NewService(context.TODO(), option.WithCredentialsJSON(credJSON))
+	if err != nil {
+		return nil, err
+	}
+	return svc, nil
 }
 
 func NewFireStoreClient(credentialsJson, projectID, databaseID string) (*firestore.Client, error) {
