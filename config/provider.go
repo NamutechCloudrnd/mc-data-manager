@@ -39,6 +39,7 @@ import (
 	"github.com/NaverCloudPlatform/ncloud-sdk-go-v2/ncloud"
 	ncpvpc "github.com/NaverCloudPlatform/ncloud-sdk-go-v2/services/vpc"
 	ncpvserver "github.com/NaverCloudPlatform/ncloud-sdk-go-v2/services/vserver"
+	vmongodb "github.com/NaverCloudPlatform/ncloud-sdk-go-v2/services/vmongodb"
 	vmysql "github.com/NaverCloudPlatform/ncloud-sdk-go-v2/services/vmysql"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -264,6 +265,18 @@ func NewAlibabaVPCClient(region, accessKey, secretKey string) (*alibabavpc.Clien
 		Endpoint:        tea.String("vpc." + region + ".aliyuncs.com"),
 	}
 	return alibabavpc.NewClient(cfg)
+}
+
+// NewNCPCloudMongoDbClient builds an NCP Cloud DB for MongoDB V2 API service from static credentials.
+func NewNCPCloudMongoDbClient(accessKey, secretKey string) (*vmongodb.V2ApiService, error) {
+	if accessKey == "" || secretKey == "" {
+		return nil, errors.New("accessKey and secretKey are required")
+	}
+	cfg := vmongodb.NewConfiguration(&ncloud.APIKey{
+		AccessKey: accessKey,
+		SecretKey: secretKey,
+	})
+	return vmongodb.NewAPIClient(cfg).V2Api, nil
 }
 
 // NewNCPCloudMysqlClient builds an NCP Cloud DB for MySQL V2 API service from static credentials.

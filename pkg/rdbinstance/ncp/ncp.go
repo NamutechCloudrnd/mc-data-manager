@@ -194,7 +194,7 @@ func (p *NCPProvider) CreateInstance(_ context.Context, spec rdbinstance.CreateS
 			status = normalizeStatus(*inst.CloudMysqlInstanceStatusName)
 		}
 	}
-	// go p.provisionInBackground(instanceNo)
+	go p.provisionInBackground(instanceNo, sub.VpcNo)
 
 	return models.DBInstance{
 		Provider:      "ncp",

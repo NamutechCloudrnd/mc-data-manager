@@ -10,14 +10,9 @@ import (
 )
 
 const (
-	// alibabaPollInterval is how often the instance status is polled while waiting
-	// for it to become Running before creating the account / public endpoint.
 	alibabaPollInterval = 30 * time.Second
-	// alibabaPollTimeout caps the total wait for the instance to become Running.
-	alibabaPollTimeout = 10 * time.Minute
-	// alibabaPublicPort is the fixed port assigned to the public endpoint (1000-5999).
+	alibabaPollTimeout = 15 * time.Minute
 	alibabaPublicPort = "3306"
-	// statusRunning is the Alibaba instance status indicating it is ready.
 	statusRunning = "Running"
 )
 

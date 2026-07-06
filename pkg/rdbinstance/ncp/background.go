@@ -1,48 +1,68 @@
 package ncp
 
 import (
-	"bytes"
-	"crypto"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"strconv"
 	"time"
 
-	"github.com/NaverCloudPlatform/ncloud-sdk-go-v2/hmac"
 	"github.com/NaverCloudPlatform/ncloud-sdk-go-v2/ncloud"
+	ncpvserver "github.com/NaverCloudPlatform/ncloud-sdk-go-v2/services/vserver"
 	"github.com/rs/zerolog/log"
 )
 
 const (
 	ncpPollInterval  = 30 * time.Second
 	ncpPollTimeout   = 20 * time.Minute
-	ncpBasePath      = "https://vmysql.apigw.ntruss.com/api/v2"
-	// ncpBasePath = "https://console.ncloud.com/vpcCloudMysql/api/v1"
 	ncpStatusRunning = "running"
 )
 
 // provisionInBackground waits for the instance to reach running state, then
-// creates a public domain for the primary server instance.
-func (p *NCPProvider) provisionInBackground(instanceNo string) {
+// adds an ACG inbound rule for the MySQL port and creates a public domain.
+func (p *NCPProvider) provisionInBackground(instanceNo, vpcNo string) {
 	logger := log.With().Str("provider", "ncp").Str("instanceNo", instanceNo).Logger()
 
 	if !p.waitForRunning(instanceNo) {
 		return
 	}
 
-	serverNo, err := p.serverInstanceNo(instanceNo)
+	inst, err := p.instanceDetail(instanceNo)
 	if err != nil {
-		logger.Error().Err(err).Msg("ncp failed to get server instance no")
+		logger.Error().Err(err).Msg("ncp failed to get instance detail")
 		return
 	}
 
-	if err := p.createPublicDomain(instanceNo, serverNo); err != nil {
-		logger.Error().Err(err).Str("serverNo", serverNo).Msg("ncp createCloudMysqlPublicDomain failed")
-		return
+	if len(inst.AccessControlGroupNoList) > 0 {
+		acgNo := ncloud.StringValue(inst.AccessControlGroupNoList[0])
+		port := "3306"
+		if inst.CloudMysqlPort != nil {
+			port = strconv.Itoa(int(*inst.CloudMysqlPort))
+		}
+		if err := p.addACGInboundRule(acgNo, vpcNo, port); err != nil {
+			logger.Error().Err(err).Str("acgNo", acgNo).Msg("ncp addACGInboundRule failed")
+		} else {
+			logger.Info().Str("acgNo", acgNo).Str("port", port).Msg("ncp ACG inbound rule added")
+		}
 	}
-	logger.Info().Str("serverNo", serverNo).Msg("ncp public domain created; provisioning complete")
+}
+
+// addACGInboundRule adds a TCP inbound rule for the given port to the ACG.
+func (p *NCPProvider) addACGInboundRule(acgNo, vpcNo, port string) error {
+	_, err := p.vserverApi.AddAccessControlGroupInboundRule(&ncpvserver.AddAccessControlGroupInboundRuleRequest{
+		RegionCode:             ncloud.String(p.region),
+		AccessControlGroupNo:  ncloud.String(acgNo),
+		VpcNo:                 ncloud.String(vpcNo),
+		AccessControlGroupRuleList: []*ncpvserver.AddAccessControlGroupRuleParameter{
+			{
+				ProtocolTypeCode: ncloud.String("TCP"),
+				IpBlock:          ncloud.String("0.0.0.0/0"),
+				PortRange:        ncloud.String(port),
+			},
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to add ACG inbound rule: %w", err)
+	}
+	return nil
 }
 
 // waitForRunning polls CloudMysqlInstanceStatusName until "running" or timeout.
@@ -79,67 +99,3 @@ func (p *NCPProvider) instanceStatus(instanceNo string) (string, error) {
 	}
 	return *inst.CloudMysqlInstanceStatusName, nil
 }
-
-// serverInstanceNo returns the CloudMysqlServerInstanceNo of the primary server.
-func (p *NCPProvider) serverInstanceNo(instanceNo string) (string, error) {
-	inst, err := p.instanceDetail(instanceNo)
-	if err != nil {
-		return "", err
-	}
-	if len(inst.CloudMysqlServerInstanceList) == 0 {
-		return "", fmt.Errorf("no server instances found for %s", instanceNo)
-	}
-	no := ncloud.StringValue(inst.CloudMysqlServerInstanceList[0].CloudMysqlServerInstanceNo)
-	if no == "" {
-		return "", fmt.Errorf("empty server instance no for %s", instanceNo)
-	}
-	return no, nil
-}
-
-func (p *NCPProvider) createPublicDomain(instanceNo, serverInstanceNo string) error {
-	path := "/applyPublicDomainRequest"
-	body := map[string]interface{}{
-		"serviceNo": instanceNo,
-		"computeNo": serverInstanceNo,
-		"isPublicUse": true,
-	}
-	return p.callRawAPI(http.MethodPost, path, body)
-}
-
-func (p *NCPProvider) callRawAPI(method, path string, body interface{}) error {
-	fullURL := ncpBasePath + path
-
-	bodyBytes, err := json.Marshal(body)
-	if err != nil {
-		return fmt.Errorf("failed to marshal body: %w", err)
-	}
-
-	timestamp := strconv.FormatInt(time.Now().UnixNano()/int64(time.Millisecond), 10)
-	signer := hmac.NewSigner(p.secretKey, crypto.SHA256)
-	signature, err := signer.Sign(method, fullURL, p.accessKey, timestamp)
-	if err != nil {
-		return fmt.Errorf("hmac sign failed: %w", err)
-	}
-
-	req, err := http.NewRequest(method, fullURL, bytes.NewReader(bodyBytes))
-	if err != nil {
-		return fmt.Errorf("failed to build request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("x-ncp-apigw-timestamp", timestamp)
-	req.Header.Set("x-ncp-iam-access-key", p.accessKey)
-	req.Header.Set("x-ncp-apigw-signature-v1", signature)
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode >= 300 {
-		b, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("NCP API returned %d: %s", resp.StatusCode, string(b))
-	}
-	return nil
-}
-

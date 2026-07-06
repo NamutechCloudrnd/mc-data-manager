@@ -341,7 +341,7 @@ func CreateNRDBInstanceHandler(c echo.Context) error {
 				return c.JSON(http.StatusBadRequest, map[string]string{"error": field + " is required"})
 			}
 		}
-		if req.AllocatedStorage <= 0 {
+		if req.AllocatedStorage <= 0 && req.Provider != "ncp" {
 			return c.JSON(http.StatusBadRequest, map[string]string{"error": "allocatedStorage must be greater than 0"})
 		}
 	}

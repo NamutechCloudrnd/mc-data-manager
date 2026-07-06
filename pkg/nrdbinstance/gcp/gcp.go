@@ -66,7 +66,7 @@ func (p *GCPProvider) ListInstances(ctx context.Context) ([]models.NRDBInstance,
 	if err != nil {
 		return nil, fmt.Errorf("failed to list Firestore databases: %w", err)
 	}
-	out := make([]models.NRDBInstance, 0, len(resp.Databases))
+	out := []models.NRDBInstance{}
 	for _, db := range resp.Databases {
 		out = append(out, toNRDBInstance(db, p.region))
 	}

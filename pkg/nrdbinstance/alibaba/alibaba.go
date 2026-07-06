@@ -48,7 +48,7 @@ func New(accessKey, secretKey, region string) (nrdbinstance.Provider, error) {
 // Endpoint and port require a per-instance DescribeReplicaSetRole call (N+1).
 func (p *AlibabaProvider) ListInstances(_ context.Context) ([]models.NRDBInstance, error) {
 	const pageSize int32 = 30
-	var out []models.NRDBInstance
+	out := []models.NRDBInstance{}
 	for pageNumber := int32(1); ; pageNumber++ {
 		resp, err := p.client.DescribeDBInstances(&dds.DescribeDBInstancesRequest{
 			RegionId:   tea.String(p.region),

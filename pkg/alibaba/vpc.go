@@ -40,13 +40,16 @@ func ResolveVSwitch(vpcClient *alibabavpc.Client, region string) (VSwitchInfo, e
 	if err != nil {
 		return VSwitchInfo{}, fmt.Errorf("failed to describe VSwitches: %w", err)
 	}
-	if resp != nil && resp.Body != nil && resp.Body.VSwitches != nil && len(resp.Body.VSwitches.VSwitch) > 0 {
-		first := resp.Body.VSwitches.VSwitch[0]
-		return VSwitchInfo{
-			VSwitchID: tea.StringValue(first.VSwitchId),
-			VpcID:     tea.StringValue(first.VpcId),
-			ZoneID:    tea.StringValue(first.ZoneId),
-		}, nil
+	if resp != nil && resp.Body != nil && resp.Body.VSwitches != nil {
+		for _, vsw := range resp.Body.VSwitches.VSwitch {
+			if tea.Int64Value(vsw.AvailableIpAddressCount) > 0 {
+				return VSwitchInfo{
+					VSwitchID: tea.StringValue(vsw.VSwitchId),
+					VpcID:     tea.StringValue(vsw.VpcId),
+					ZoneID:    tea.StringValue(vsw.ZoneId),
+				}, nil
+			}
+		}
 	}
 	return createVPCAndVSwitch(vpcClient, region)
 }
