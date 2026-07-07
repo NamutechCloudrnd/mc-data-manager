@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	alibabards "github.com/alibabacloud-go/rds-20140815/v8/client"
 	"github.com/alibabacloud-go/tea/tea"
@@ -28,6 +29,8 @@ type AlibabaProvider struct {
 	client    *alibabards.Client
 	vpcClient *alibabavpc.Client
 	region    string
+	mu        sync.Mutex
+	failedIDs map[string]struct{}
 }
 
 // New builds an Alibaba RDS provider from static credentials and a region.
@@ -40,7 +43,20 @@ func New(accessKey, secretKey, region string) (rdbinstance.Provider, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Alibaba VPC client: %w", err)
 	}
-	return &AlibabaProvider{client: client, vpcClient: vpcClient, region: region}, nil
+	return &AlibabaProvider{client: client, vpcClient: vpcClient, region: region, failedIDs: make(map[string]struct{})}, nil
+}
+
+func (p *AlibabaProvider) markFailed(instanceID string) {
+	p.mu.Lock()
+	p.failedIDs[instanceID] = struct{}{}
+	p.mu.Unlock()
+}
+
+func (p *AlibabaProvider) isFailed(instanceID string) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	_, ok := p.failedIDs[instanceID]
+	return ok
 }
 
 // buildCreateRequest maps a CSP-agnostic CreateSpec to an Alibaba
@@ -115,7 +131,6 @@ func parsePort(port *string) int32 {
 	}
 	return int32(v)
 }
-
 
 // toSnakeCase converts a CamelCase/PascalCase string to lower snake_case,
 // handling acronym boundaries (e.g., DBInstanceClassChanging → db_instance_class_changing).
@@ -225,11 +240,16 @@ func (p *AlibabaProvider) ListInstances(ctx context.Context) ([]models.DBInstanc
 		}
 		items := resp.Body.Items.DBInstance
 		for _, item := range items {
-			ep, port, err := p.instanceEndpoint(tea.StringValue(item.DBInstanceId))
+			id := tea.StringValue(item.DBInstanceId)
+			ep, port, err := p.instanceEndpoint(id)
 			if err != nil {
-				return nil, fmt.Errorf("failed to describe net info for %s: %w", tea.StringValue(item.DBInstanceId), err)
+				return nil, fmt.Errorf("failed to describe net info for %s: %w", id, err)
 			}
-			out = append(out, toListedDBInstance(item, ep, port, p.region))
+			inst := toListedDBInstance(item, ep, port, p.region)
+			if p.isFailed(id) {
+				inst.Status = "failed"
+			}
+			out = append(out, inst)
 		}
 		if int32(len(items)) < pageSize {
 			break

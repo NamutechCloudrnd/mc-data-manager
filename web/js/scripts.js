@@ -534,8 +534,8 @@ function loadProfileList() {
                 const seen = new Set();
                 const options = (Array.isArray(json) ? json : [])
                 .filter((item) => {
-                    const awsOnlyPage = ['/generate/mysql', '/migrate/mysql', '/backup/register', '/restore/register'].some(p => window.location.pathname.includes(p));
-                    if (awsOnlyPage && item.providerName !== 'aws') return false;
+                    // const awsOnlyPage = ['/generate/mysql', '/migrate/mysql', '/backup/register', '/restore/register'].some(p => window.location.pathname.includes(p));
+                    // if (awsOnlyPage && item.providerName !== 'aws') return false;
                     if (seen.has(item.providerName)) return false;
                     seen.add(item.providerName);
                     return true;
@@ -565,18 +565,15 @@ function loadProfileList() {
                         option.setAttribute("data-provider", optionData.provider);
                         sourceSelectElement.appendChild(option);
                     });
+                    if (options.length === 1) {
+                        sourceSelectElement.selectedIndex = 1;
+                        sourceSelectElement.dispatchEvent(new Event('change'));
+                    }
                 }
 
                 const targetSelectElement = document.getElementById("targetCredentialSelect");
 
                 if (targetSelectElement) {
-                    // placeholder 역할 옵션 추가
-                    // const placeholder = document.createElement("option");
-                    // placeholder.textContent = "Select Credential";
-                    // placeholder.disabled = true;
-                    // placeholder.selected = true;
-                    // awsSelect.appendChild(placeholder);
-
                     options.forEach(optionData => {
                         const option = document.createElement("option");
                         option.value = optionData.value;
@@ -584,6 +581,10 @@ function loadProfileList() {
                         option.setAttribute("data-provider", optionData.provider);
                         targetSelectElement.appendChild(option);
                     });
+                    if (options.length === 1) {
+                        targetSelectElement.selectedIndex = 1;
+                        targetSelectElement.dispatchEvent(new Event('change'));
+                    }
                 }
 
                 // console.log('options: ', options);
@@ -1166,6 +1167,12 @@ document.addEventListener("DOMContentLoaded", () => {
             providerInput.dispatchEvent(new Event('change'));
             updateRegionsByProvider(prefix, provider);
             updateLabelByProvider(prefix, provider);
+            if (provider !== 'none') {
+                const regionSel = document.getElementById(prefix + "RegionSelect");
+                if (regionSel && regionSel.value && regionSel.value !== 'none') {
+                    regionSel.dispatchEvent(new Event('change'));
+                }
+            }
         });
     };
 
