@@ -82,6 +82,12 @@
                         <span class="input-group-text"><i class="bi bi-search"></i></span>
                         <input type="text" class="form-control" id="instance-search" placeholder="Search by name">
                     </div>
+                    <button type="button" class="btn btn-danger btn-sm" id="deleteInstanceBtn" disabled>
+                        <i class="bi bi-trash3 me-1"></i>Delete
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="refresh-endpoint-btn" title="최신 Endpoint 조회">
+                        <i class="bi bi-arrow-clockwise me-1"></i>Endpoint
+                    </button>
                     <button type="button" class="btn btn-primary btn-sm" id="openCreateBtn" disabled>
                         <i class="bi bi-plus-lg me-1"></i>Instance
                     </button>
@@ -105,19 +111,18 @@
             <table class="table table-bordered table-sm mb-0">
                 <thead>
                     <tr>
-                        <th style="width:36px;"></th>
                         <th>ID</th>
                         <th>Name</th>
                         <th>Status</th>
                         <th>Version</th>
-                        <th>Host (endpoint)</th>
+                        <th>Host (endpoint) <i id="ncp-host-info-icon" class="bi bi-info-circle text-info d-none" role="button" style="cursor:pointer;font-size:0.85em;" tabindex="0"></i></th>
                         <th>Port</th>
                         <th>InstanceClass</th>
                     </tr>
                 </thead>
                 <tbody id="rdb-table-body">
                     <tr>
-                        <td colspan="8" class="text-center text-muted small py-3">Credential과 Region을 선택하면 인스턴스 목록을 조회합니다</td>
+                        <td colspan="7" class="text-center text-muted small py-3">Credential과 Region을 선택하면 인스턴스 목록을 조회합니다</td>
                     </tr>
                 </tbody>
             </table>
@@ -195,7 +200,7 @@
                         <input type="number" class="form-control rounded-end" id="gen-mysql-allocatedStorage" autocomplete="off" name="allocatedStorage" placeholder="20" min="20" value="20" required>
                         <label for="gen-mysql-allocatedStorage">Allocated Storage (GB)</label>
                     </div>
-                    <div class="invalid-feedback ps-2">Please enter 20 GB or more.</div>
+                    <div class="invalid-feedback ps-2" id="storage-invalid-feedback">Please enter 20 GB or more.</div>
                 </div>
                 <div class="input-group mb-3">
                     <span class="input-group-text rounded-start"><i class="bi bi-person-fill"></i></span>
@@ -204,6 +209,7 @@
                         <label for="gen-mysql-username">Username</label>
                     </div>
                 </div>
+                <div id="username-feedback" class="text-danger small ps-2 d-none mb-2"></div>
                 <div class="input-group mb-0">
                     <span class="input-group-text rounded-start"><i class="bi bi-lock-fill"></i></span>
                     <div class="form-floating">
@@ -211,6 +217,7 @@
                         <label for="gen-mysql-password">Password</label>
                     </div>
                 </div>
+                <div id="password-feedback" class="text-danger small ps-2 d-none mb-2"></div>
             </div>
 
             <!-- Connection info -->
@@ -234,6 +241,7 @@
                         <label for="connect-host">Host / IP</label>
                     </div>
                 </div>
+
                 <div class="input-group mb-0">
                     <span class="input-group-text rounded-start"><i class="bi bi-ethernet"></i></span>
                     <div class="form-floating">
@@ -244,8 +252,32 @@
             </div>
         </div>
 
-        <div class="offcanvas-footer p-3 border-top">
-            <button type="button" class="btn btn-primary w-100" id="submitBtn" disabled>Save</button>
+        <div class="offcanvas-footer p-3 border-top d-flex flex-column gap-2">
+            <button type="button" class="btn btn-primary w-100" id="submitBtn" disabled>Create</button>
+        </div>
+    </div>
+
+    <!-- ── Delete Confirmation Modal ───────────────────── -->
+    <div class="modal fade" id="deleteConfirmModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header border-bottom-0 pb-1">
+                    <h5 class="modal-title text-danger fw-semibold">Delete</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body pt-1">
+                    <p class="mb-2 small">You are about to permanently delete <strong id="delete-instance-name"></strong>.</p>
+                    <p class="mb-3 small" id="delete-modal-instruction">To delete this instance, enter its Name.</p>
+                    <input type="text" class="form-control" id="delete-username-input" placeholder="Name" autocomplete="off">
+                    <div id="delete-username-error" class="text-danger small mt-1 d-none">Name does not match.</div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-danger" id="deleteConfirmBtn" disabled>
+                        <i class="bi bi-trash3 me-1"></i>Delete
+                    </button>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -265,6 +297,12 @@
 .form-control:disabled, .datatable-input:disabled {
     background-color: #E9ECEF !important;
 }
+#icTriggerText {
+    width: 100%;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
 </style>
 
 <script>
@@ -282,7 +320,13 @@ document.addEventListener('DOMContentLoaded', function () {
     let pollTimerId       = null;
     let elapsedTimerId    = null;
     let pollStartTime     = null;
-    let pollingInstanceId = null;
+    let pollingInstanceId      = null;
+    let ncpEndpointIsPublic    = false;
+    let allowIntentionalOcHide = false; // 생성 중 잠금 상태에서도 코드가 의도적으로 닫을 때만 true
+    const RDB_POLL_INTERVAL_MS  = 5000;
+    const RDB_CREATE_TIMEOUT_MS = 10 * 60 * 1000;
+    let deletePollTimerId    = null;
+    let deletePollInstanceId = null;
 
     const regionSelect        = document.getElementById('targetRegionSelect');
     const engineSelect        = document.getElementById('engine');
@@ -296,6 +340,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const icHidden            = document.getElementById('instanceClass');
     const actionBtn           = document.getElementById('submitBtn');
     const openCreateBtn       = document.getElementById('openCreateBtn');
+    const deleteInstanceBtn   = document.getElementById('deleteInstanceBtn');
     const sectionDb           = document.getElementById('section-db');
     const sectionInstance     = document.getElementById('section-instance');
     const sectionConnect      = document.getElementById('section-connect');
@@ -307,8 +352,140 @@ document.addEventListener('DOMContentLoaded', function () {
     const pollBannerElapsed   = document.getElementById('poll-banner-elapsed');
 
     const offcanvas = new bootstrap.Offcanvas(offcanvasEl, { backdrop: true, scroll: false });
+    const offcanvasCloseBtn = offcanvasEl.querySelector('.btn-close');
+
+    // 인스턴스 생성 중(폴링 진행 중)에는 백드롭 클릭/ESC/닫기 버튼으로 닫을 수 없게 잠근다.
+    // 코드가 의도적으로 닫는 경우(제출 직후 자동 닫힘, 선택 해제 등)는 allowIntentionalOcHide로 허용한다.
+    function setCreationLock(locked) {
+        offcanvasCloseBtn.disabled = locked;
+        offcanvasCloseBtn.style.pointerEvents = locked ? 'none' : '';
+        offcanvasCloseBtn.style.opacity = locked ? '0.3' : '';
+    }
+    offcanvasEl.addEventListener('hide.bs.offcanvas', e => {
+        if (pollingInstanceId && !allowIntentionalOcHide) { e.preventDefault(); return; }
+        allowIntentionalOcHide = false;
+    });
+
+    const ncpHostInfoPopover = new bootstrap.Popover(document.getElementById('ncp-host-info-icon'), {
+        html: true,
+        trigger: 'click',
+        placement: 'bottom',
+        title: '<i class="bi bi-info-circle-fill text-info me-1"></i>NCP Public 도메인 안내',
+        content: 'NCP에서 Public 도메인을 이용하려면 콘솔에서 별도 활성화가 필요합니다.<br><br>' +
+                 '<a href="https://console.ncloud.com/vpcCloudMysql/server" target="_blank" rel="noopener noreferrer" class="fw-semibold">NCP 콘솔 바로가기 ↗</a>에서 인스턴스 선택 후 ' +
+                 '<strong>DB 관리 &gt; Public 도메인 관리</strong>를 선택하세요.'
+    });
 
     function getProvider() { return document.getElementById('targetPoint[provider]')?.value || ''; }
+    function getRegion(val) {
+        const r = val !== undefined ? val : regionSelect.value;
+        return getProvider() === 'ncp' ? r.toUpperCase() : r;
+    }
+
+    function isUsernameValid() {
+        const val = document.getElementById('gen-mysql-username').value.trim();
+        if (!val) return false;
+        const provider = getProvider();
+        if (provider === 'alibaba') {
+            if (val.length > 32) return false;
+            if (!/^[a-zA-Z][a-zA-Z0-9_]*[a-zA-Z0-9]$/.test(val) && val.length !== 1) return false;
+            if (val.length === 1 && !/^[a-zA-Z]$/.test(val)) return false;
+            if (ALIBABA_BLOCKED_USERNAMES.includes(val.toLowerCase())) return false;
+        }
+        if (provider === 'ncp') {
+            if (NCP_BLOCKED_USERNAMES.includes(val.toLowerCase())) return false;
+        }
+        return true;
+    }
+
+    const ALIBABA_BLOCKED_USERNAMES = ['admin', 'root'];
+    const NCP_BLOCKED_USERNAMES     = ['root','admin','radmin','agent','api_admin','ha_admin',
+        'ragent','repl_admin','mysql.session','mysql.sys'];
+
+    const COMMON_PASSWORDS = ['password','password1','password123','12345678','123456789',
+        'qwerty123','p@ssw0rd','passw0rd','welcome1','admin123','admin1234','letmein1','iloveyou1'];
+
+    function isPasswordValid() {
+        const val = document.getElementById('gen-mysql-password').value;
+        if (!val) return false;
+        if (getProvider() !== 'alibaba') return true;
+        if (val.length < 8 || val.length > 32) return false;
+        const cats = [/[A-Z]/.test(val), /[a-z]/.test(val), /[0-9]/.test(val), /[!@#$%^&*()_+\-=]/.test(val)];
+        if (cats.filter(Boolean).length < 3) return false;
+        if (COMMON_PASSWORDS.includes(val.toLowerCase())) return false;
+        return true;
+    }
+
+    function getUsernameError(val) {
+        if (!val) return '';
+        const provider = getProvider();
+        if (provider === 'alibaba') {
+            if (val.length > 32) return 'Username must not exceed 32 characters.';
+            if (!/^[a-zA-Z0-9_]+$/.test(val)) return 'Username can only contain letters, numbers, and underscores (_).';
+            if (!/^[a-zA-Z]/.test(val)) return 'Username must start with a letter.';
+            if (!/[a-zA-Z0-9]$/.test(val)) return 'Username must end with a letter or number.';
+            if (ALIBABA_BLOCKED_USERNAMES.includes(val.toLowerCase())) return `'${val}' is not allowed as a username.`;
+        }
+        if (provider === 'ncp') {
+            if (NCP_BLOCKED_USERNAMES.includes(val.toLowerCase())) return `'${val}' is not allowed as a username.`;
+        }
+        return '';
+    }
+
+    function getPasswordError(val) {
+        if (!val) return '';
+        if (val.length < 8 || val.length > 32) return 'Password must be 8–32 characters.';
+        const cats = [/[A-Z]/.test(val), /[a-z]/.test(val), /[0-9]/.test(val), /[!@#$%^&*()_+\-=]/.test(val)];
+        if (cats.filter(Boolean).length < 3) return 'Include at least 3 of: uppercase, lowercase, digit, special character (!@#$%^&*()_+-=).';
+        if (COMMON_PASSWORDS.includes(val.toLowerCase())) return 'This password is too common. Please choose a stronger password.';
+        return '';
+    }
+
+    function applyProviderRules() {
+        const provider   = getProvider();
+        const usernameEl = document.getElementById('gen-mysql-username');
+        const storageEl  = document.getElementById('gen-mysql-allocatedStorage');
+        const storageFb  = document.getElementById('storage-invalid-feedback');
+        const usernameFb = document.getElementById('username-feedback');
+
+        if (provider === 'gcp') {
+            usernameEl.value    = 'root';
+            usernameEl.readOnly = true;
+            storageEl.min       = '10';
+            storageEl.value     = '10';
+            if (storageFb) storageFb.textContent = 'Please enter 10 GB or more.';
+        } else {
+            if (usernameEl.readOnly) usernameEl.value = '';
+            usernameEl.readOnly = false;
+            if (provider === 'alibaba') {
+                storageEl.min   = '20';
+                storageEl.value = '20';
+                if (storageFb) storageFb.textContent = 'Please enter 20 GB or more.';
+            } else {
+                storageEl.min = '20';
+                if (storageFb) storageFb.textContent = 'Please enter 20 GB or more.';
+                if (Number(storageEl.value) < 20) storageEl.value = '20';
+            }
+        }
+        if (usernameFb) { usernameFb.textContent = ''; usernameFb.classList.add('d-none'); }
+        const pwFb = document.getElementById('password-feedback');
+        if (pwFb) { pwFb.textContent = ''; pwFb.classList.add('d-none'); }
+        document.getElementById('ncp-host-info-icon').classList.toggle('d-none', provider !== 'ncp');
+        updateButton();
+    }
+
+    function icSplit(cls) {
+        if (getProvider() === 'gcp') {
+            const parts = cls.split('-');
+            return { family: parts.slice(0, 2).join('-'), size: parts.slice(2).join('-') };
+        }
+        if (getProvider() === 'ncp') {
+            const parts = cls.split('.');
+            return { family: parts.slice(0, 4).join('.'), size: parts.slice(4).join('.') };
+        }
+        const parts = cls.split('.');
+        return { family: parts.slice(0, 2).join('.'), size: parts.slice(2).join('.') };
+    }
 
     function esc(s) {
         return String(s == null ? '—' : s)
@@ -337,13 +514,14 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     openCreateBtn.addEventListener('click', () => {
+        console.log('phase:', phase);
         updateOcContext();
         if (phase === 3) {
             // 인스턴스 선택 상태: enterSelectMode가 이미 폼을 채워둠, 바로 show
             offcanvas.show();
             return;
         }
-        if (phase === 1 && engineVersionData.length > 0 && sectionDb.classList.contains('d-none')) {
+        if (phase === 1 && engineVersionData.length > 0) {
             const engines = [...new Set(engineVersionData.map(d => d.engine))];
             resetSelect(engineSelect, '-');
             engines.forEach(engine => {
@@ -353,14 +531,22 @@ document.addEventListener('DOMContentLoaded', function () {
             });
             resetSelect(engineVersionSelect, '-');
             icReset();
+            sectionInstance.classList.add('d-none');
+            sectionConnect.classList.add('d-none');
+            document.getElementById('refresh-endpoint-btn').classList.add('d-none');
+            document.getElementById('gen-mysql-instanceId').value = '';
+            document.getElementById('gen-mysql-password').value   = '';
+            document.getElementById('connect-host').value         = '';
+            document.getElementById('connect-port').value         = '';
             sectionDb.classList.remove('d-none');
         }
+        applyProviderRules();
         offcanvas.show();
     });
     offcanvasEl.addEventListener('show.bs.offcanvas', () => {
         pollToolbarBanner.classList.add('d-none');
     });
-    offcanvasEl.addEventListener('hide.bs.offcanvas', () => {
+    offcanvasEl.addEventListener('hidden.bs.offcanvas', () => {
         if (pollingInstanceId) pollToolbarBanner.classList.remove('d-none');
     });
 
@@ -373,26 +559,17 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     // ── sessionStorage ────────────────────────────────────
+    // 복원 범위는 credential/region + 생성 폴링 상태로 한정한다.
+    // 폼 필드·phase·섹션 표시까지 복원하면 이전 인스턴스 값이
+    // offcanvas에 유령처럼 남는 문제가 생긴다 (같은 값 재선택 시 change 미발생).
     function saveState() {
         try {
             sessionStorage.setItem(STATE_KEY, JSON.stringify({
-                credentialId:        document.getElementById('targetCredentialSelect').value,
-                provider:            getProvider(),
-                region:              regionSelect.value,
-                engine:              engineSelect.value,
-                engineVersion:       engineVersionSelect.value,
-                instanceClass:       icHidden.value,
-                instanceId:          document.getElementById('gen-mysql-instanceId').value,
-                allocatedStorage:    document.getElementById('gen-mysql-allocatedStorage').value,
-                username:            document.getElementById('gen-mysql-username').value,
-                connectHost:         document.getElementById('connect-host').value,
-                connectPort:         document.getElementById('connect-port').value,
-                phase,
+                credentialId: document.getElementById('targetCredentialSelect').value,
+                provider:     getProvider(),
+                region:       regionSelect.value,
                 pollingInstanceId,
                 pollStartTime,
-                showSectionDb:       !sectionDb.classList.contains('d-none'),
-                showSectionInstance: !sectionInstance.classList.contains('d-none'),
-                showSectionConnect:  !sectionConnect.classList.contains('d-none'),
             }));
         } catch (e) { console.warn('saveState:', e); }
     }
@@ -420,109 +597,24 @@ document.addEventListener('DOMContentLoaded', function () {
 
         if (!s.region || s.region === 'none') return;
         regionSelect.value = s.region;
-        updateCreateBtn();
-        updateOcContext();
+        // 수동 선택과 동일한 경로로 초기화·조회를 수행한다
+        // (폼 클리어 → 테이블 로드 → engine-versions 로드).
+        // 폼 필드·phase는 복원하지 않는다 — 새로고침 후에도 offcanvas는 항상 빈 생성 폼
+        regionSelect.dispatchEvent(new Event('change'));
 
-        const provider = getProvider();
-        if (!provider || provider === 'none') return;
-
-        loadTable();
-
-        // Engine versions
-        let evData;
-        try {
-            const res = await fetch('/db/rdbms/engine-versions', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ provider, region: s.region })
-            });
-            if (!res.ok) return;
-            evData = await res.json();
-        } catch { return; }
-
-        engineVersionData = Array.isArray(evData) ? evData : [];
-        const engines = [...new Set(engineVersionData.map(d => d.engine))];
-        resetSelect(engineSelect, '-');
-        engines.forEach(e => {
-            const opt = document.createElement('option');
-            opt.value = e; opt.textContent = e;
-            engineSelect.appendChild(opt);
-        });
-        const savedEngine = engines.includes(s.engine) ? s.engine : engines[0];
-        if (!savedEngine) { sectionDb.classList.remove('d-none'); return; }
-        engineSelect.value = savedEngine;
-
-        const versions = engineVersionData.filter(d => d.engine === savedEngine).map(d => d.engineVersion);
-        resetSelect(engineVersionSelect, '-');
-        versions.forEach(v => {
-            const opt = document.createElement('option');
-            opt.value = v; opt.textContent = v;
-            engineVersionSelect.appendChild(opt);
-        });
-        const savedVersion = versions.includes(s.engineVersion) ? s.engineVersion : versions[0];
-        if (!savedVersion) { sectionDb.classList.remove('d-none'); return; }
-        engineVersionSelect.value = savedVersion;
-        sectionDb.classList.remove('d-none');
-
-        // Instance classes
-        let icData;
-        try {
-            const res = await fetch('/db/rdbms/instance-class', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ provider, region: s.region, engine: savedEngine, engineVersion: savedVersion })
-            });
-            if (!res.ok) return;
-            icData = await res.json();
-        } catch { return; }
-
-        instanceClassData = Array.isArray(icData) ? icData : [];
-        const families = [...new Set(instanceClassData.map(c => c.split('.').slice(0, 2).join('.')))];
-        icFamilyList.innerHTML = '';
-        icSizeList.innerHTML   = '';
-        families.forEach(f => {
-            const div = document.createElement('div');
-            div.className = 'ic-family-item px-3 py-2 small';
-            div.textContent = f;
-            div.addEventListener('click', e => { e.stopPropagation(); icSelectFamily(f, div); });
-            icFamilyList.appendChild(div);
-        });
-        if (s.instanceClass && instanceClassData.includes(s.instanceClass)) {
-            icHidden.value = s.instanceClass;
-            icTriggerText.textContent = s.instanceClass;
-            icTriggerText.classList.remove('text-muted');
-            const savedFamily = s.instanceClass.split('.').slice(0, 2).join('.');
-            const familyEl = [...icFamilyList.querySelectorAll('.ic-family-item')]
-                .find(el => el.textContent.trim() === savedFamily);
-            if (familyEl) icSelectFamily(savedFamily, familyEl);
-        }
-
-        if (s.instanceId)       document.getElementById('gen-mysql-instanceId').value = s.instanceId;
-        if (s.allocatedStorage) document.getElementById('gen-mysql-allocatedStorage').value = s.allocatedStorage;
-        if (s.username)         document.getElementById('gen-mysql-username').value = s.username;
-        if (s.showSectionInstance) sectionInstance.classList.remove('d-none');
-
-        if (s.showSectionConnect) {
-            sectionConnect.classList.remove('d-none');
-            if (s.connectHost) document.getElementById('connect-host').value = s.connectHost;
-            if (s.connectPort) document.getElementById('connect-port').value = s.connectPort;
-        }
-
-        phase = s.phase || 1;
-
-        if (phase === 2) setCreationFieldsDisabled(true);
-
-        if (s.pollingInstanceId && phase === 1) {
+        // 생성 폴링 중 새로고침 대응: 폴링만 이어서 재개
+        if (s.pollingInstanceId) {
             pollingInstanceId = s.pollingInstanceId;
             pollStartTime     = s.pollStartTime || Date.now();
             pollBannerId.textContent = pollingInstanceId;
             pollToolbarBanner.classList.remove('d-none');
             icMiniBanner.classList.remove('d-none');
+            setCreationLock(true);
             startElapsedTimer();
-            pollTimerId = setInterval(pollStatus, 30000);
+            pollTimerId = setInterval(pollStatus, RDB_POLL_INTERVAL_MS);
             document.addEventListener('visibilitychange', onVisibilityChange);
             setTimeout(pollStatus, 1000);
         }
-
-        updateButton();
     }
 
     function waitForCredentials() {
@@ -540,42 +632,35 @@ document.addEventListener('DOMContentLoaded', function () {
     // ── Status 배지 ───────────────────────────────────────
     function statusBadge(status) {
         const s = (status || '').toLowerCase();
-        let icon, cls;
         if (s === 'available') {
-            icon = 'bi-check-circle-fill'; cls = 'text-success';
-        } else if (s === 'creating') {
-            icon = 'bi-hourglass-split ic-spin'; cls = 'text-primary';
-        } else if (s.startsWith('configuring') || s === 'modifying' || s === 'upgrading') {
-            icon = 'bi-gear-fill ic-spin-slow'; cls = 'text-info';
-        } else if (s === 'stopped' || s === 'stopping') {
-            icon = 'bi-pause-circle-fill'; cls = 'text-warning';
-        } else if (s === 'deleting' || s === 'deleted') {
-            icon = 'bi-trash3-fill'; cls = 'text-danger';
-        } else if (s.startsWith('failed') || s.startsWith('incompatible')) {
-            icon = 'bi-exclamation-circle-fill'; cls = 'text-danger';
-        } else {
-            icon = 'bi-dash-circle'; cls = 'text-secondary';
+            return `<span class="text-success small"><i class="bi bi-check-circle-fill me-1"></i>available</span>`;
         }
-        return `<span class="${cls} small"><i class="bi ${icon} me-1"></i>${esc(status)}</span>`;
+        if (s === 'deleting') {
+            return `<span class="text-danger small"><span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>deleting</span>`;
+        }
+        return `<span class="text-primary small"><i class="bi bi-hourglass-split ic-spin me-1"></i>creating</span>`;
     }
 
     function makeRow(i) {
         const available = (i.status || '').toLowerCase() === 'available';
         const iid = i.instanceId || i.name || '';
-        const isChecked = selectedInstance && selectedInstance.instanceId === iid;
-        return `<tr>
-            <td class="text-center align-middle" style="width:36px;">
-                <input type="checkbox" class="form-check-input rdb-row-check"
-                    ${available ? '' : 'disabled'}
-                    ${isChecked ? 'checked' : ''}
-                    data-instance-id="${esc(iid)}"
-                    data-engine="${esc(i.engine || '')}"
-                    data-engine-version="${esc(i.engineVersion || '')}"
-                    data-instance-class="${esc(i.instanceClass || '')}"
-                    data-allocated-storage="${esc(String(i.allocatedStorage || ''))}"
-                    data-endpoint="${esc(i.endpoint || '')}"
-                    data-port="${esc(String(i.port || ''))}">
-            </td>
+        const isSelected = selectedInstance && selectedInstance.instanceId === iid;
+        const username = i.masterUsername
+            || localStorage.getItem('rdb-username-' + (i.instanceId || ''))
+            || localStorage.getItem('rdb-username-' + (i.name || ''))
+            || '';
+        return `<tr class="rdb-row${isSelected ? ' table-active' : ''}"
+                style="cursor:${available ? 'pointer' : 'default'};"
+                data-instance-id="${esc(iid)}"
+                data-engine="${esc(i.engine || '')}"
+                data-engine-version="${esc(i.engineVersion || '')}"
+                data-instance-class="${esc(i.instanceClass || '')}"
+                data-allocated-storage="${esc(String(i.allocatedStorage || ''))}"
+                data-endpoint="${esc(i.endpoint || '')}"
+                data-port="${esc(String(i.port || ''))}"
+                data-name="${esc(i.name || iid)}"
+                data-master-username="${esc(username)}"
+                data-available="${available ? '1' : '0'}">
             <td class="small">${esc(i.instanceId || '-')}</td>
             <td class="small">${esc(i.name || i.instanceId)}</td>
             <td>${statusBadge(i.status)}</td>
@@ -603,12 +688,12 @@ document.addEventListener('DOMContentLoaded', function () {
         if (currentPage > totalPages) currentPage = totalPages;
 
         if (!filtered.length) {
-            tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted small py-3">No instances found</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted small py-3">No instances found</td></tr>';
         } else {
             const start = (currentPage - 1) * PAGE_SIZE;
             tbody.innerHTML = filtered.slice(start, start + PAGE_SIZE).map(makeRow).join('');
-            tbody.querySelectorAll('.rdb-row-check').forEach(cb => {
-                cb.addEventListener('change', onInstanceCheckChange);
+            tbody.querySelectorAll('tr.rdb-row').forEach(row => {
+                row.addEventListener('click', () => onRowClick(row));
             });
         }
 
@@ -653,28 +738,33 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
-    function onInstanceCheckChange(e) {
-        document.querySelectorAll('.rdb-row-check').forEach(other => {
-            if (other !== e.target) other.checked = false;
-        });
-        if (e.target.checked) {
-            const d = e.target.dataset;
-            selectedInstance = {
-                instanceId:       d.instanceId,
-                engine:           d.engine,
-                engineVersion:    d.engineVersion,
-                instanceClass:    d.instanceClass,
-                allocatedStorage: d.allocatedStorage,
-                endpoint:         d.endpoint,
-                port:             d.port
-            };
-            openCreateBtn.innerHTML = '<i class="bi bi-plus-lg me-1"></i>Sample Data';
-            enterSelectMode();
-        } else {
+    function onRowClick(row) {
+        if (row.dataset.available !== '1') return;
+        const d = row.dataset;
+        if (selectedInstance && selectedInstance.instanceId === d.instanceId) {
             selectedInstance = null;
-            openCreateBtn.innerHTML = '<i class="bi bi-plus-lg me-1"></i>Instance';
+            document.querySelectorAll('tr.rdb-row.table-active').forEach(r => r.classList.remove('table-active'));
             exitSelectMode();
+            return;
         }
+        document.querySelectorAll('tr.rdb-row.table-active').forEach(r => r.classList.remove('table-active'));
+        row.classList.add('table-active');
+        selectedInstance = {
+            instanceId:     d.instanceId,
+            engine:         d.engine,
+            engineVersion:  d.engineVersion,
+            instanceClass:  d.instanceClass,
+            allocatedStorage: d.allocatedStorage,
+            endpoint:       d.endpoint,
+            port:           d.port,
+            name:           d.name,
+            masterUsername: d.masterUsername
+        };
+        openCreateBtn.innerHTML = '<i class="bi bi-plus-lg me-1"></i>Sample Data';
+        // 행 클릭 = 선택만. Offcanvas는 "Sample Data" 버튼(openCreateBtn)을 눌러야 연다 —
+        // 삭제만 하려는 사용자가 행을 클릭했을 때 상세 폼이 강제로 열리는 것을 방지.
+        enterSelectMode();
+        updateOcContext();
     }
 
     function enterSelectMode() {
@@ -703,17 +793,18 @@ document.addEventListener('DOMContentLoaded', function () {
 
         // Instance fields
         document.getElementById('gen-mysql-instanceId').value      = inst.instanceId;
-        document.getElementById('gen-mysql-allocatedStorage').value = inst.allocatedStorage || '';
         document.getElementById('connect-host').value              = inst.endpoint;
         document.getElementById('connect-port').value              = inst.port;
 
         setCreationFieldsDisabled(true);
+        document.getElementById('storage-group').classList.add('d-none');
 
         sectionDb.classList.remove('d-none');
         sectionInstance.classList.remove('d-none');
         sectionConnect.classList.remove('d-none');
 
         document.getElementById('oc-title').innerHTML = '<i class="bi bi-plus-circle me-2 text-primary"></i>Create Sample Data';
+        deleteInstanceBtn.disabled = false;
 
         phase = 3;
         updateButton();
@@ -721,29 +812,31 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function exitSelectMode() {
         document.getElementById('oc-title').innerHTML = '<i class="bi bi-plus-circle me-2 text-primary"></i>Create Instance';
+        deleteInstanceBtn.disabled = true;
         document.getElementById('storage-group').classList.remove('d-none');
-        phase = 1;
-        setCreationFieldsDisabled(false);
+        resetSelect(engineSelect, '-');
+        resetSelect(engineVersionSelect, '-');
         document.getElementById('gen-mysql-instanceId').value       = '';
         document.getElementById('gen-mysql-allocatedStorage').value  = '20';
         document.getElementById('gen-mysql-username').value          = '';
         document.getElementById('gen-mysql-password').value          = '';
         document.getElementById('connect-host').value                = '';
         document.getElementById('connect-port').value                = '';
-        sectionInstance.classList.add('d-none');
-        sectionConnect.classList.add('d-none');
-        updateButton();
+        icReset();
+        sectionDb.classList.add('d-none');
+        applyProviderRules();
         const bsOC = bootstrap.Offcanvas.getInstance(offcanvasEl);
-        if (bsOC) bsOC.hide();
+        if (bsOC) { allowIntentionalOcHide = true; bsOC.hide(); }
     }
 
     async function loadTable() {
+        stopDeletePolling();
         const provider = getProvider();
-        const region   = regionSelect.value;
+        const region   = getRegion();
         if (!provider || provider === 'none' || !region || region === 'none') {
             allInstances = [];
             document.getElementById('rdb-table-body').innerHTML =
-                '<tr><td colspan="8" class="text-center text-muted small py-3">When you select a Credential and Region, the instance list is retrieved.</td></tr>';
+                '<tr><td colspan="7" class="text-center text-muted small py-3">When you select a Credential and Region, the instance list is retrieved.</td></tr>';
             document.getElementById('rdb-pagination').innerHTML = '';
             return;
         }
@@ -768,7 +861,8 @@ document.addEventListener('DOMContentLoaded', function () {
     function updateButton() {
         if (phase === 2) {
             const pw = document.getElementById('gen-mysql-password').value.trim();
-            actionBtn.disabled = !pw;
+            const ncpPrivate = getProvider() === 'ncp' && !ncpEndpointIsPublic;
+            actionBtn.disabled = !pw || ncpPrivate;
             actionBtn.textContent = 'Submit';
             return;
         }
@@ -779,28 +873,108 @@ document.addEventListener('DOMContentLoaded', function () {
             actionBtn.textContent = 'Submit';
             return;
         }
-        const storageEl = document.getElementById('gen-mysql-allocatedStorage');
-        const storageOk = storageEl.value !== '' && Number(storageEl.value) >= 20;
+        const storageEl  = document.getElementById('gen-mysql-allocatedStorage');
+        const storageMin = Number(storageEl.min) || 20;
+        const storageOk  = storageEl.value !== '' && Number(storageEl.value) >= storageMin;
         const ok = document.getElementById('gen-mysql-instanceId').value.trim()
             && storageOk
-            && document.getElementById('gen-mysql-username').value.trim()
-            && document.getElementById('gen-mysql-password').value.trim()
+            && isUsernameValid()
+            && isPasswordValid()
             && icHidden.value;
         actionBtn.disabled = !ok;
-        actionBtn.textContent = 'Save';
+        actionBtn.textContent = 'Create';
     }
 
-    ['gen-mysql-instanceId', 'gen-mysql-username'].forEach(id => {
-        document.getElementById(id).addEventListener('input', () => { updateButton(); saveState(); });
+    document.getElementById('gen-mysql-instanceId').addEventListener('input', () => { updateButton(); saveState(); });
+    document.getElementById('gen-mysql-username').addEventListener('input', function () {
+        const provider = getProvider();
+        if (provider === 'alibaba' || provider === 'ncp') {
+            const usernameFb = document.getElementById('username-feedback');
+            const msg = getUsernameError(this.value.trim());
+            usernameFb.textContent = msg;
+            usernameFb.classList.toggle('d-none', !msg);
+        }
+        updateButton();
+        saveState();
     });
     document.getElementById('gen-mysql-allocatedStorage').addEventListener('input', function () {
-        const invalid = this.value !== '' && Number(this.value) < 20;
+        const min     = Number(this.min) || 20;
+        const invalid = this.value !== '' && Number(this.value) < min;
         this.classList.toggle('is-invalid', invalid);
         this.closest('.form-floating').classList.toggle('is-invalid', invalid);
         updateButton();
         saveState();
     });
-    document.getElementById('gen-mysql-password').addEventListener('input', updateButton);
+    document.getElementById('gen-mysql-password').addEventListener('input', function () {
+        if (getProvider() === 'alibaba') {
+            const pwFb = document.getElementById('password-feedback');
+            const msg = getPasswordError(this.value);
+            pwFb.textContent = msg;
+            pwFb.classList.toggle('d-none', !msg);
+        }
+        updateButton();
+    });
+
+    // ── Delete flow ──────────────────────────────────────
+    const deleteConfirmModal = new bootstrap.Modal(document.getElementById('deleteConfirmModal'));
+
+    document.getElementById('deleteConfirmModal').addEventListener('show.bs.modal', function () {
+        document.getElementById('delete-username-input').value = '';
+        document.getElementById('delete-username-error').classList.add('d-none');
+        document.getElementById('deleteConfirmBtn').disabled = true;
+    });
+
+    deleteInstanceBtn.addEventListener('click', function () {
+        const inst = selectedInstance;
+        if (!inst) return;
+        const nameEl = document.getElementById('delete-instance-name');
+        nameEl.textContent = inst.instanceId;
+        const instrEl = document.getElementById('delete-modal-instruction');
+        instrEl.textContent = 'To delete this instance, enter its Name: ' + inst.name;
+        deleteConfirmModal.show();
+    });
+
+    document.getElementById('delete-username-input').addEventListener('input', function () {
+        const inst = selectedInstance;
+        if (!inst) return;
+        const expected = inst.name;
+        const match = this.value === expected;
+        const isEmpty = !this.value;
+        document.getElementById('delete-username-error').classList.toggle('d-none', isEmpty || match);
+        document.getElementById('deleteConfirmBtn').disabled = !match;
+    });
+
+    document.getElementById('deleteConfirmBtn').addEventListener('click', async function () {
+        const inst = selectedInstance;
+        if (!inst) return;
+        const btn = this;
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Deleting...';
+        const provider = getProvider();
+        const region = getRegion();
+        try {
+            const r = await fetch('/db/rdbms', {
+                method: 'DELETE',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ provider, region, instanceId: inst.instanceId })
+            });
+            const j = await r.json().catch(() => ({}));
+            if (!r.ok) throw new Error(j.error || 'Delete failed');
+            deleteConfirmModal.hide();
+            document.querySelectorAll('tr.rdb-row.table-active').forEach(r => r.classList.remove('table-active'));
+            selectedInstance = null;
+            openCreateBtn.innerHTML = '<i class="bi bi-plus-lg me-1"></i>Instance';
+            exitSelectMode();
+            clearState();
+            loadTable();
+            startDeletePolling(inst.instanceId);
+        } catch (err) {
+            alert('삭제 실패: ' + err.message);
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-trash3 me-1"></i>Delete';
+        }
+    });
 
     actionBtn.addEventListener('click', async () => {
         if (phase === 1) await handleSave();
@@ -810,7 +984,7 @@ document.addEventListener('DOMContentLoaded', function () {
     // ── Save ──────────────────────────────────────────────
     async function handleSave() {
         const provider         = getProvider();
-        const region           = regionSelect.value;
+        const region           = getRegion();
         const engine           = engineSelect.value;
         const engineVersion    = engineVersionSelect.value;
         const instanceId       = document.getElementById('gen-mysql-instanceId').value.trim();
@@ -836,16 +1010,20 @@ document.addEventListener('DOMContentLoaded', function () {
             sectionConnect.classList.remove('d-none');
             loadTable();
 
-            if (instance.status === 'available' && instance.endpoint) {
+            const isReady = instance.status === 'available' && instance.endpoint
+                && (provider !== 'alibaba' || instance.endpoint.includes('-pub'));
+            if (isReady) {
                 onInstanceReady(instance.endpoint);
             } else {
                 startPolling(instance.instanceId);
+                allowIntentionalOcHide = true;
+                offcanvas.hide();
             }
             saveState();
         } catch (err) {
             alert('Failed to create instance: ' + err.message);
             actionBtn.disabled = false;
-            actionBtn.textContent = 'Save';
+            actionBtn.textContent = 'Create';
         }
     }
 
@@ -879,7 +1057,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
             resetAfterSubmit();
             const bsOC = bootstrap.Offcanvas.getInstance(offcanvasEl);
-            if (bsOC) bsOC.hide();
+            if (bsOC) { allowIntentionalOcHide = true; bsOC.hide(); }
         } catch (err) {
             alert(err.message || err);
         } finally {
@@ -888,8 +1066,9 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     function resetAfterSubmit() {
-        document.querySelectorAll('.rdb-row-check').forEach(cb => cb.checked = false);
+        document.querySelectorAll('tr.rdb-row.table-active').forEach(r => r.classList.remove('table-active'));
         selectedInstance = null;
+        deleteInstanceBtn.disabled = true;
         openCreateBtn.innerHTML = '<i class="bi bi-plus-lg me-1"></i>Instance';
         document.getElementById('oc-title').innerHTML = '<i class="bi bi-plus-circle me-2 text-primary"></i>Instance';
         document.getElementById('storage-group').classList.remove('d-none');
@@ -921,9 +1100,19 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     function onInstanceReady(endpoint) {
+        const apiInstanceId = pollingInstanceId; // capture before stopPolling() clears it
         stopPolling();
         document.getElementById('connect-host').value = endpoint;
+        document.getElementById('refresh-endpoint-btn').classList.toggle('d-none', getProvider() !== 'ncp');
         setCreationFieldsDisabled(true);
+        const formInstanceId = document.getElementById('gen-mysql-instanceId').value.trim();
+        const username       = document.getElementById('gen-mysql-username').value.trim();
+        if (username) {
+            if (formInstanceId) localStorage.setItem('rdb-username-' + formInstanceId, username);
+            if (apiInstanceId && apiInstanceId !== formInstanceId) {
+                localStorage.setItem('rdb-username-' + apiInstanceId, username);
+            }
+        }
         loadTable();
         phase = 2;
         updateButton();
@@ -943,6 +1132,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // ── 폴링 ─────────────────────────────────────────────
     function startPolling(instanceId) {
+        stopDeletePolling();
         pollingInstanceId = instanceId;
         pollStartTime     = Date.now();
         pollBannerId.textContent = instanceId;
@@ -951,9 +1141,9 @@ document.addEventListener('DOMContentLoaded', function () {
         if (!offcanvasEl.classList.contains('show')) {
             pollToolbarBanner.classList.remove('d-none');
         }
+        setCreationLock(true);
         startElapsedTimer();
-        pollTimerId = setInterval(pollStatus, 30000);
-        setTimeout(pollStatus, 5000);
+        pollTimerId = setInterval(pollStatus, RDB_POLL_INTERVAL_MS);
         document.addEventListener('visibilitychange', onVisibilityChange);
     }
 
@@ -962,6 +1152,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (elapsedTimerId) { clearInterval(elapsedTimerId); elapsedTimerId = null; }
         document.removeEventListener('visibilitychange', onVisibilityChange);
         pollingInstanceId = null;
+        setCreationLock(false);
         icMiniBanner.classList.add('d-none');
         pollToolbarBanner.classList.add('d-none');
     }
@@ -972,10 +1163,15 @@ document.addEventListener('DOMContentLoaded', function () {
 
     async function pollStatus() {
         if (!pollingInstanceId) return;
+        if (Date.now() - pollStartTime > RDB_CREATE_TIMEOUT_MS) {
+            stopPolling();
+            alert('인스턴스 생성이 10분 내에 완료되지 않았습니다. 콘솔에서 상태를 직접 확인해주세요.');
+            return;
+        }
         try {
             const res = await fetch('/db/rdbms', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ provider: getProvider(), region: regionSelect.value })
+                body: JSON.stringify({ provider: getProvider(), region: getRegion() })
             });
             if (!res.ok) return;
             const instances = await res.json();
@@ -983,15 +1179,81 @@ document.addEventListener('DOMContentLoaded', function () {
             const found = Array.isArray(instances)
                 ? instances.find(i => i.instanceId === pollingInstanceId)
                 : null;
+            if (found && found.status === 'failed') {
+                stopPolling();
+                return;
+            }
             if (found && found.status === 'available' && found.endpoint) {
-                document.getElementById('connect-port').value = String(found.port || '');
-                onInstanceReady(found.endpoint);
+                const isReady = getProvider() !== 'alibaba' || found.endpoint.includes('-pub');
+                if (isReady) {
+                    if (getProvider() === 'ncp') ncpEndpointIsPublic = false;
+                    else ncpEndpointIsPublic = true;
+                    document.getElementById('connect-port').value = String(found.port || '');
+                    onInstanceReady(found.endpoint);
+                }
             }
         } catch (e) { console.error('pollStatus:', e); }
     }
 
+    // ── 삭제 완료 폴링 ─────────────────────────────────────
+    function startDeletePolling(instanceId) {
+        deletePollInstanceId = instanceId;
+        if (deletePollTimerId) clearInterval(deletePollTimerId);
+        deletePollTimerId = setInterval(pollDeleteStatus, RDB_POLL_INTERVAL_MS);
+    }
+
+    function stopDeletePolling() {
+        if (deletePollTimerId) { clearInterval(deletePollTimerId); deletePollTimerId = null; }
+        deletePollInstanceId = null;
+    }
+
+    async function pollDeleteStatus() {
+        if (!deletePollInstanceId) return;
+        try {
+            const res = await fetch('/db/rdbms', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ provider: getProvider(), region: getRegion() })
+            });
+            if (!res.ok) return;
+            const instances = await res.json();
+            renderTable(instances);
+            const stillExists = Array.isArray(instances)
+                && instances.some(i => i.instanceId === deletePollInstanceId);
+            if (!stillExists) stopDeletePolling();
+        } catch (e) { console.error('pollDeleteStatus:', e); }
+    }
+
     document.getElementById('ic-check-btn').addEventListener('click', () => {
         if (pollingInstanceId) pollStatus();
+    });
+
+    document.getElementById('refresh-endpoint-btn').addEventListener('click', async function () {
+        const instanceId = document.getElementById('gen-mysql-instanceId').value.trim();
+        if (!instanceId) return;
+        this.disabled = true;
+        this.innerHTML = '<span class="spinner-border spinner-border-sm" role="status"></span>';
+        try {
+            const res = await fetch('/db/rdbms', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ provider: getProvider(), region: getRegion() })
+            });
+            if (res.ok) {
+                const instances = await res.json();
+                renderTable(instances);
+                const found = Array.isArray(instances) ? instances.find(i => i.instanceId === instanceId) : null;
+                if (found && found.endpoint) {
+                    const prevEndpoint = document.getElementById('connect-host').value;
+                    if (getProvider() === 'ncp' && found.endpoint !== prevEndpoint) ncpEndpointIsPublic = true;
+                    document.getElementById('connect-host').value = found.endpoint;
+                    updateButton();
+                    saveState();
+                }
+            }
+        } catch (e) { console.error('refreshEndpoint:', e); }
+        finally {
+            this.disabled = false;
+            this.innerHTML = '<i class="bi bi-arrow-clockwise"></i>';
+        }
     });
 
     // ── 2-panel IC dropdown ───────────────────────────────
@@ -1001,12 +1263,13 @@ document.addEventListener('DOMContentLoaded', function () {
     function icSelectFamily(family, familyEl) {
         icFamilyList.querySelectorAll('.ic-family-item').forEach(el => el.classList.remove('active'));
         familyEl.classList.add('active');
-        const sizes = instanceClassData.filter(c => c.startsWith(family + '.'));
+        const sep = getProvider() === 'gcp' ? '-' : '.';
+        const sizes = instanceClassData.filter(c => c.startsWith(family + sep));
         icSizeList.innerHTML = '';
         sizes.forEach(s => {
             const div = document.createElement('div');
             div.className = 'ic-size-item px-3 py-2 small';
-            div.textContent = s.slice(family.length + 1);
+            div.textContent = icSplit(s).size;
             div.addEventListener('click', e => {
                 e.stopPropagation();
                 icHidden.value = s;
@@ -1023,7 +1286,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function icLoadFamilies(classes) {
         instanceClassData = Array.isArray(classes) ? classes : [];
-        const families = [...new Set(instanceClassData.map(c => c.split('.').slice(0, 2).join('.')))];
+        const families = [...new Set(instanceClassData.map(c => icSplit(c).family))];
         icFamilyList.innerHTML = '';
         icSizeList.innerHTML   = '';
         families.forEach(f => {
@@ -1055,6 +1318,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (phase !== 2) {
             sectionInstance.classList.add('d-none');
             sectionConnect.classList.add('d-none');
+            document.getElementById('refresh-endpoint-btn').classList.add('d-none');
             setCreationFieldsDisabled(false);
             phase = 1;
         }
@@ -1102,17 +1366,14 @@ document.addEventListener('DOMContentLoaded', function () {
             engineVersionSelect.appendChild(opt);
         });
         icReset();
-        if (engineVersionSelect.options.length > 1) {
-            engineVersionSelect.selectedIndex = 1;
-            engineVersionSelect.dispatchEvent(new Event('change'));
-        }
     }
 
     regionSelect.addEventListener('change', async function () {
         const provider = getProvider();
-        const region   = this.value;
+        const region   = getRegion(this.value);
         document.querySelectorAll('.rdb-row-check').forEach(cb => cb.checked = false);
         selectedInstance = null;
+        deleteInstanceBtn.disabled = true;
         openCreateBtn.innerHTML = '<i class="bi bi-plus-lg me-1"></i>Instance';
         resetSelect(engineSelect, '-');
         resetSelect(engineVersionSelect, '-');
@@ -1125,6 +1386,7 @@ document.addEventListener('DOMContentLoaded', function () {
         document.getElementById('gen-mysql-password').value         = '';
         document.getElementById('connect-host').value               = '';
         document.getElementById('connect-port').value               = '';
+        applyProviderRules();
         updateCreateBtn();
         updateOcContext();
         loadTable();
@@ -1145,10 +1407,12 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     engineVersionSelect.addEventListener('change', async function () {
-        const provider = getProvider(), region = regionSelect.value;
+        const provider = getProvider(), region = getRegion();
         const engine = engineSelect.value, engineVersion = this.value;
         icReset();
-        if (!provider || provider === 'none' || !region || region === 'none' || !engine || !engineVersion) return;
+        if (!provider || provider === 'none' || !regionSelect.value || regionSelect.value === 'none' || !engine || !engineVersion) return;
+        sectionInstance.classList.remove('d-none');
+        applyProviderRules();
         try {
             const res = await fetch('/db/rdbms/instance-class', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -1167,7 +1431,7 @@ document.addEventListener('DOMContentLoaded', function () {
         sectionDb.classList.add('d-none');
         updateOcContext();
         // scripts.js가 동기적으로 provider/region을 설정한 뒤 테이블 조회
-        setTimeout(() => { updateCreateBtn(); updateOcContext(); loadTable(); }, 0);
+        setTimeout(() => { updateCreateBtn(); updateOcContext(); loadTable(); applyProviderRules(); }, 0);
     });
 
     // ── 초기화 ───────────────────────────────────────────
