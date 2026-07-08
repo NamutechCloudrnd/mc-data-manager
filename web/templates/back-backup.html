@@ -102,15 +102,19 @@
                     <!-- Instance search + table -->
                     <div class="d-flex justify-content-between align-items-center mb-3">
                         <span class="text-muted small fw-semibold">Instance List</span>
-                        <div class="input-group input-group-sm" style="width:200px;">
-                            <span class="input-group-text"><i class="bi bi-search"></i></span>
-                            <input type="text" class="form-control" id="rdbms-search" placeholder="Search by name">
+                        <div class="d-flex gap-2 align-items-center">
+                            <div class="input-group input-group-sm" style="width:200px;">
+                                <span class="input-group-text"><i class="bi bi-search"></i></span>
+                                <input type="text" class="form-control" id="rdbms-search" placeholder="Search by name">
+                            </div>
+                            <button type="button" class="btn btn-danger btn-sm" id="deleteInstanceBtn" disabled>
+                                <i class="bi bi-trash3 me-1"></i>Delete
+                            </button>
                         </div>
                     </div>
                     <table class="table table-bordered table-sm mb-0">
                         <thead>
                             <tr>
-                                <th style="width:36px;"></th>
                                 <th>ID</th>
                                 <th>Name</th>
                                 <th>Status</th>
@@ -121,7 +125,7 @@
                             </tr>
                         </thead>
                         <tbody id="rdbms-table-body">
-                            <tr><td colspan="8" class="text-center text-muted small py-3">Credential과 Region을 선택하면 인스턴스 목록을 조회합니다</td></tr>
+                            <tr><td colspan="7" class="text-center text-muted small py-3">Credential과 Region을 선택하면 인스턴스 목록을 조회합니다</td></tr>
                         </tbody>
                     </table>
                     <div id="rdbms-pagination" class="mt-2"></div>
@@ -174,6 +178,33 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- ── Delete Confirmation Modal ───────────────────── -->
+                <div class="modal fade" id="deleteConfirmModal" tabindex="-1" aria-hidden="true">
+                    <div class="modal-dialog modal-dialog-centered">
+                        <div class="modal-content">
+                            <div class="modal-header border-bottom-0 pb-1">
+                                <h5 class="modal-title text-danger fw-semibold">
+                                    <i class="bi bi-exclamation-triangle-fill me-2"></i>Delete Instance
+                                </h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                            </div>
+                            <div class="modal-body pt-1">
+                                <p class="mb-2 small">You are about to permanently delete <strong id="delete-instance-name"></strong>.</p>
+                                <p class="mb-3 small" id="delete-modal-instruction">To delete this instance, enter its Name.</p>
+                                <input type="text" class="form-control" id="delete-username-input" placeholder="Name" autocomplete="off">
+                                <div id="delete-username-error" class="text-danger small mt-1 d-none">Name does not match.</div>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                <button type="button" class="btn btn-danger" id="deleteConfirmBtn" disabled>
+                                    <i class="bi bi-trash3 me-1"></i>Delete
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="form-section mt-3" id="mongo-nrdbms" style="display:none;">
                     <div class="input-group mb-3">
                         <span class="input-group-text rounded-start"><i class="fa-solid fa-house"></i></span>
@@ -273,6 +304,7 @@ const source = {
                 updateFormVisibility()
 
                 document.getElementById("title").innerHTML = key
+                if (serviceMap[key] === 'rdbms') { loadRdbmsTable(); }
             });
         });
         
@@ -531,34 +563,29 @@ const source = {
 
     // ── RDBMS instance table ──────────────────────────────────────────
     let srcRdbmsAllRows = [], srcRdbmsPage = 1;
+    let selectedSrcInstance = null;
     const SRC_PAGE_SIZE = 10;
 
     function rdbmsStatusBadge(status) {
         const s = (status || '').toLowerCase();
-        let icon, cls;
         if (s === 'available') {
-            icon = 'bi-check-circle-fill'; cls = 'text-success';
-        } else if (s === 'creating') {
-            icon = 'bi-hourglass-split ic-spin'; cls = 'text-primary';
-        } else if (s.startsWith('configuring') || s === 'modifying' || s === 'upgrading') {
-            icon = 'bi-gear-fill ic-spin-slow'; cls = 'text-info';
-        } else if (s === 'stopped' || s === 'stopping') {
-            icon = 'bi-pause-circle-fill'; cls = 'text-warning';
-        } else if (s === 'deleting' || s === 'deleted') {
-            icon = 'bi-trash3-fill'; cls = 'text-danger';
-        } else if (s.startsWith('failed') || s.startsWith('incompatible')) {
-            icon = 'bi-exclamation-circle-fill'; cls = 'text-danger';
-        } else {
-            icon = 'bi-dash-circle'; cls = 'text-secondary';
+            return `<span class="text-success small"><i class="bi bi-check-circle-fill me-1"></i>available</span>`;
         }
-        return `<span class="${cls} small"><i class="bi ${icon} me-1"></i>${status || '-'}</span>`;
+        if (s === 'deleting') {
+            return `<span class="text-danger small"><span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>deleting</span>`;
+        }
+        return `<span class="text-primary small"><i class="bi bi-hourglass-split ic-spin me-1"></i>creating</span>`;
     }
 
     function makeSrcRdbmsRow(inst) {
-        return `<tr class="src-rdbms-row" style="cursor:pointer;"
+        const available = (inst.status || '').toLowerCase() === 'available';
+        const isSelected = selectedSrcInstance && selectedSrcInstance.instanceId === (inst.instanceId || '');
+        return `<tr class="src-rdbms-row${isSelected ? ' table-active' : ''}" style="cursor:${available ? 'pointer' : 'default'};"
+                    data-instance-id="${inst.instanceId || ''}"
                     data-endpoint="${inst.endpoint || ''}"
-                    data-port="${inst.port || ''}">
-                    <td class="text-center align-middle" style="width:36px;"><input type="checkbox" class="form-check-input src-rdbms-check"></td>
+                    data-port="${inst.port || ''}"
+                    data-name="${inst.name || inst.instanceId || ''}"
+                    data-available="${available ? '1' : '0'}">
                     <td class="small">${inst.instanceId || '-'}</td>
                     <td class="small">${inst.name || '-'}</td>
                     <td>${rdbmsStatusBadge(inst.status)}</td>
@@ -596,7 +623,7 @@ const source = {
         const tbody = document.getElementById('rdbms-table-body');
         tbody.innerHTML = page.length
             ? page.map(makeSrcRdbmsRow).join('')
-            : '<tr><td colspan="8" class="text-center text-muted small py-3">No instances found</td></tr>';
+            : '<tr><td colspan="7" class="text-center text-muted small py-3">No instances found</td></tr>';
         tbody.querySelectorAll('.src-rdbms-row').forEach(row => {
             row.addEventListener('click', () => onSrcRdbmsRowClick(row));
         });
@@ -604,30 +631,65 @@ const source = {
     }
 
     function onSrcRdbmsRowClick(row) {
-        document.querySelectorAll('.src-rdbms-check').forEach(c => c.checked = false);
-        row.querySelector('.src-rdbms-check').checked = true;
-        document.getElementById('mysql-srcHost').value = row.dataset.endpoint;
-        document.getElementById('mysql-srcPort').value = row.dataset.port;
-        document.getElementById('rdbms-connect-section').style.display = '';
-        document.getElementById('rdbms-db-section').style.display = 'none';
+        if (row.dataset.available !== '1') return;
+        const d = row.dataset;
+        if (selectedSrcInstance && selectedSrcInstance.instanceId === d.instanceId) {
+            selectedSrcInstance = null;
+            document.querySelectorAll('tr.src-rdbms-row.table-active').forEach(r => r.classList.remove('table-active'));
+            applySrcRdbmsSelection();
+            return;
+        }
+        document.querySelectorAll('tr.src-rdbms-row.table-active').forEach(r => r.classList.remove('table-active'));
+        row.classList.add('table-active');
+        selectedSrcInstance = {
+            instanceId: d.instanceId,
+            endpoint: d.endpoint,
+            port: d.port,
+            name: d.name
+        };
+        applySrcRdbmsSelection();
+    }
+
+    function applySrcRdbmsSelection() {
+        const deleteBtn = document.getElementById('deleteInstanceBtn');
+        if (selectedSrcInstance) {
+            document.getElementById('mysql-srcHost').value = selectedSrcInstance.endpoint;
+            document.getElementById('mysql-srcPort').value = selectedSrcInstance.port;
+            document.getElementById('rdbms-connect-section').style.display = '';
+            document.getElementById('rdbms-db-section').style.display = 'none';
+            deleteBtn.disabled = false;
+            deleteBtn.innerHTML = '<i class="bi bi-trash3 me-1"></i>Delete';
+        } else {
+            document.getElementById('rdbms-connect-section').style.display = 'none';
+            document.getElementById('rdbms-db-section').style.display = 'none';
+            deleteBtn.disabled = true;
+            deleteBtn.innerHTML = '<i class="bi bi-trash3 me-1"></i>Delete';
+        }
     }
 
     function resetRdbmsTable() {
         srcRdbmsAllRows = []; srcRdbmsPage = 1;
+        selectedSrcInstance = null;
         document.getElementById('rdbms-table-body').innerHTML =
-            '<tr><td colspan="8" class="text-center text-muted small py-3">Credential과 Region을 선택하면 인스턴스 목록을 조회합니다</td></tr>';
+            '<tr><td colspan="7" class="text-center text-muted small py-3">Credential과 Region을 선택하면 인스턴스 목록을 조회합니다</td></tr>';
         document.getElementById('rdbms-pagination').innerHTML = '';
         document.getElementById('rdbms-connect-section').style.display = 'none';
         document.getElementById('rdbms-db-section').style.display = 'none';
+        document.getElementById('deleteInstanceBtn').disabled = true;
+    }
+
+    function getSourceRegion() {
+        const r = source.region.value;
+        return source.provider.value === 'ncp' ? r.toUpperCase() : r;
     }
 
     function loadRdbmsTable() {
         const provider = source.provider.value;
-        const region   = source.region.value;
+        const region   = getSourceRegion();
         if (!provider || provider === 'none' || !region || region === 'none') return;
 
         const tbody = document.getElementById('rdbms-table-body');
-        tbody.innerHTML = '<tr><td colspan="8" class="text-center py-3"><span class="spinner-border spinner-border-sm"></span></td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center py-3"><span class="spinner-border spinner-border-sm"></span></td></tr>';
         document.getElementById('rdbms-connect-section').style.display = 'none';
         document.getElementById('rdbms-db-section').style.display = 'none';
 
@@ -655,7 +717,7 @@ const source = {
         const username = document.getElementById('mysql-srcUsername').value;
         const password = document.getElementById('mysql-srcPassword').value;
         const provider = source.provider.value;
-        const region = source.region.value;
+        const region = getSourceRegion();
         if (!host || !port || !username || !password) {
             alert('Host, Port, Username, Password를 모두 입력해주세요.');
             return;
@@ -686,6 +748,61 @@ const source = {
 
     document.getElementById('rdbms-search').addEventListener('input', () => { srcRdbmsPage = 1; renderSrcRdbmsTable(); });
     document.getElementById('rdbms-load-db-btn').addEventListener('click', loadRdbmsDatabases);
+
+    // ── Delete flow ──────────────────────────────────────
+    const deleteConfirmModal = new bootstrap.Modal(document.getElementById('deleteConfirmModal'));
+
+    document.getElementById('deleteConfirmModal').addEventListener('show.bs.modal', function () {
+        document.getElementById('delete-username-input').value = '';
+        document.getElementById('delete-username-error').classList.add('d-none');
+        document.getElementById('deleteConfirmBtn').disabled = true;
+    });
+
+    document.getElementById('deleteInstanceBtn').addEventListener('click', function () {
+        const inst = selectedSrcInstance;
+        if (!inst) return;
+        document.getElementById('delete-instance-name').textContent = inst.instanceId;
+        document.getElementById('delete-modal-instruction').textContent = 'To delete this instance, enter its Name: ' + inst.name;
+        deleteConfirmModal.show();
+    });
+
+    document.getElementById('delete-username-input').addEventListener('input', function () {
+        const inst = selectedSrcInstance;
+        if (!inst) return;
+        const expected = inst.name;
+        const match = this.value === expected;
+        const isEmpty = !this.value;
+        document.getElementById('delete-username-error').classList.toggle('d-none', isEmpty || match);
+        document.getElementById('deleteConfirmBtn').disabled = !match;
+    });
+
+    document.getElementById('deleteConfirmBtn').addEventListener('click', async function () {
+        const inst = selectedSrcInstance;
+        if (!inst) return;
+        const btn = this;
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Deleting...';
+        try {
+            const r = await fetch('/db/rdbms', {
+                method: 'DELETE',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ provider: source.provider.value, region: getSourceRegion(), instanceId: inst.instanceId })
+            });
+            const j = await r.json().catch(() => ({}));
+            if (!r.ok) throw new Error(j.error || 'Delete failed');
+            deleteConfirmModal.hide();
+            selectedSrcInstance = null;
+            document.querySelectorAll('tr.src-rdbms-row.table-active').forEach(r => r.classList.remove('table-active'));
+            document.getElementById('rdbms-connect-section').style.display = 'none';
+            document.getElementById('deleteInstanceBtn').disabled = true;
+            loadRdbmsTable();
+        } catch (err) {
+            alert('삭제 실패: ' + err.message);
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-trash3 me-1"></i>Delete';
+        }
+    });
 
     updateFormVisibility();
 </script>

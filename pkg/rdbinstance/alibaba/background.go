@@ -1,8 +1,8 @@
 package alibaba
 
 import (
-	"time"
 	"strings"
+	"time"
 
 	alibabards "github.com/alibabacloud-go/rds-20140815/v8/client"
 	"github.com/alibabacloud-go/tea/tea"
@@ -10,10 +10,14 @@ import (
 )
 
 const (
-	alibabaPollInterval = 30 * time.Second
-	alibabaPollTimeout = 15 * time.Minute
+	// alibabaPollInterval is how often the instance status is polled while waiting
+	// for it to become Running before creating the account / public endpoint.
+	alibabaPollInterval = 5 * time.Second
+	// alibabaPollTimeout caps the total wait for the instance to become Running.
+	alibabaPollTimeout = 10 * time.Minute
+	// alibabaPublicPort is the fixed port assigned to the public endpoint (1000-5999).
 	alibabaPublicPort = "3306"
-	statusRunning = "Running"
+	statusRunning     = "Running"
 )
 
 // provisionInBackground waits for the instance to become Running, then creates
@@ -28,6 +32,7 @@ func (p *AlibabaProvider) provisionInBackground(instanceID, masterUsername, mast
 
 	if err := p.createAccount(instanceID, masterUsername, masterPassword); err != nil {
 		logger.Error().Err(err).Msg("alibaba CreateAccount failed")
+		p.markFailed(instanceID)
 		return
 	}
 	logger.Info().Msg("alibaba account created")
@@ -48,7 +53,7 @@ func (p *AlibabaProvider) waitForRunning(instanceID string) bool {
 	deadline := time.Now().Add(alibabaPollTimeout)
 	for {
 		time.Sleep(alibabaPollInterval)
-		
+
 		status, err := p.instanceStatus(instanceID)
 		if err != nil {
 			log.Warn().Err(err).Str("instanceId", instanceID).Msg("alibaba status poll failed")

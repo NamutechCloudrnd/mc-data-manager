@@ -9,15 +9,23 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"time"
 
 	"github.com/NaverCloudPlatform/ncloud-sdk-go-v2/ncloud"
+	vmysql "github.com/NaverCloudPlatform/ncloud-sdk-go-v2/services/vmysql"
 	ncpvpc "github.com/NaverCloudPlatform/ncloud-sdk-go-v2/services/vpc"
 	ncpvserver "github.com/NaverCloudPlatform/ncloud-sdk-go-v2/services/vserver"
-	vmysql "github.com/NaverCloudPlatform/ncloud-sdk-go-v2/services/vmysql"
 	"github.com/cloud-barista/mc-data-manager/config"
 	"github.com/cloud-barista/mc-data-manager/models"
 	ncpcommon "github.com/cloud-barista/mc-data-manager/pkg/ncp"
 	"github.com/cloud-barista/mc-data-manager/pkg/rdbinstance"
+)
+
+// createVPCAndSubnet에서 VPC/서브넷 자동 생성 시 사용하는 기본 CIDR.
+// NCP 허용 사설 대역(10.0.0.0/8 등) 내에서 서브넷은 VPC CIDR에 포함되어야 한다.
+const (
+	ncpVPCCIDR    = "10.0.0.0/16"
+	ncpSubnetCIDR = "10.0.1.0/24"
 )
 
 // NCPProvider implements rdbinstance.Provider for NCP Cloud DB for MySQL.
@@ -30,6 +38,114 @@ type NCPProvider struct {
 	secretKey  string
 }
 
+// subnetInfo holds SubnetNo and VpcNo resolved for instance creation.
+type subnetInfo struct {
+	subnetNo string
+	vpcNo    string
+}
+
+// resolveSubnet returns the first available public subnet in the region.
+// If none exists, a new VPC and public subnet are created.
+func (p *NCPProvider) resolveSubnet() (subnetInfo, error) {
+	resp, err := p.vpcApi.GetSubnetList(&ncpvpc.GetSubnetListRequest{
+		RegionCode:     ncloud.String(p.region),
+		SubnetTypeCode: ncloud.String("PUBLIC"),
+		UsageTypeCode:  ncloud.String("GEN"),
+	})
+	if err != nil {
+		return subnetInfo{}, fmt.Errorf("failed to list public subnets: %w", err)
+	}
+	if resp != nil && len(resp.SubnetList) > 0 {
+		first := resp.SubnetList[0]
+		return subnetInfo{
+			subnetNo: ncloud.StringValue(first.SubnetNo),
+			vpcNo:    ncloud.StringValue(first.VpcNo),
+		}, nil
+	}
+	return p.createVPCAndSubnet()
+}
+
+// waitVPCAvailable polls GetVpcList until VpcStatus.Code is "RUN", timing out after 60s.
+func (p *NCPProvider) waitVPCAvailable(vpcNo string) error {
+	deadline := time.Now().Add(60 * time.Second)
+	for time.Now().Before(deadline) {
+		resp, err := p.vpcApi.GetVpcList(&ncpvpc.GetVpcListRequest{
+			RegionCode: ncloud.String(p.region),
+			VpcNoList:  []*string{ncloud.String(vpcNo)},
+		})
+		if err != nil {
+			return fmt.Errorf("failed to describe VPC status: %w", err)
+		}
+		if resp != nil && len(resp.VpcList) > 0 && resp.VpcList[0].VpcStatus != nil {
+			if ncloud.StringValue(resp.VpcList[0].VpcStatus.Code) == "RUN" {
+				return nil
+			}
+		}
+		time.Sleep(3 * time.Second)
+	}
+	return fmt.Errorf("VPC %s did not reach RUN status within 60s", vpcNo)
+}
+
+// createVPCAndSubnet creates a new VPC and private subnet for Cloud MySQL.
+func (p *NCPProvider) createVPCAndSubnet() (subnetInfo, error) {
+	vpcResp, err := p.vpcApi.CreateVpc(&ncpvpc.CreateVpcRequest{
+		RegionCode:    ncloud.String(p.region),
+		Ipv4CidrBlock: ncloud.String(ncpVPCCIDR),
+	})
+	if err != nil {
+		return subnetInfo{}, fmt.Errorf("failed to create NCP VPC: %w", err)
+	}
+	if vpcResp == nil || len(vpcResp.VpcList) == 0 || vpcResp.VpcList[0].VpcNo == nil {
+		return subnetInfo{}, fmt.Errorf("create NCP VPC returned no VPC id")
+	}
+	vpcNo := ncloud.StringValue(vpcResp.VpcList[0].VpcNo)
+
+	if err := p.waitVPCAvailable(vpcNo); err != nil {
+		return subnetInfo{}, err
+	}
+
+	zoneResp, err := p.vserverApi.GetZoneList(&ncpvserver.GetZoneListRequest{
+		RegionCode: ncloud.String(p.region),
+	})
+	if err != nil {
+		return subnetInfo{}, fmt.Errorf("failed to list NCP zones: %w", err)
+	}
+	if zoneResp == nil || len(zoneResp.ZoneList) == 0 {
+		return subnetInfo{}, fmt.Errorf("no zones found in region %s", p.region)
+	}
+	zoneCode := ncloud.StringValue(zoneResp.ZoneList[0].ZoneCode)
+
+	aclResp, err := p.vpcApi.GetNetworkAclList(&ncpvpc.GetNetworkAclListRequest{
+		RegionCode: ncloud.String(p.region),
+		VpcNo:      ncloud.String(vpcNo),
+	})
+	if err != nil {
+		return subnetInfo{}, fmt.Errorf("failed to list NCP network ACLs: %w", err)
+	}
+	if aclResp == nil || len(aclResp.NetworkAclList) == 0 {
+		return subnetInfo{}, fmt.Errorf("no network ACL found for VPC %s", vpcNo)
+	}
+	networkAclNo := ncloud.StringValue(aclResp.NetworkAclList[0].NetworkAclNo)
+
+	subnetResp, err := p.vpcApi.CreateSubnet(&ncpvpc.CreateSubnetRequest{
+		RegionCode:     ncloud.String(p.region),
+		VpcNo:          ncloud.String(vpcNo),
+		ZoneCode:       ncloud.String(zoneCode),
+		NetworkAclNo:   ncloud.String(networkAclNo),
+		Subnet:         ncloud.String(ncpSubnetCIDR),
+		SubnetTypeCode: ncloud.String("PUBLIC"),
+	})
+	if err != nil {
+		return subnetInfo{}, fmt.Errorf("failed to create NCP subnet: %w", err)
+	}
+	if subnetResp == nil || len(subnetResp.SubnetList) == 0 || subnetResp.SubnetList[0].SubnetNo == nil {
+		return subnetInfo{}, fmt.Errorf("create NCP subnet returned no subnet id")
+	}
+	return subnetInfo{
+		subnetNo: ncloud.StringValue(subnetResp.SubnetList[0].SubnetNo),
+		vpcNo:    vpcNo,
+	}, nil
+}
 
 // New builds an NCP Cloud DB provider from static credentials and a region.
 func New(accessKey, secretKey, region string) (rdbinstance.Provider, error) {
@@ -150,10 +266,15 @@ func (p *NCPProvider) ListInstances(_ context.Context) ([]models.DBInstance, err
 	}
 	out := []models.DBInstance{}
 	for _, inst := range resp.CloudMysqlInstanceList {
+		// Skip instances already being removed — matches NCP console behavior.
+		if s := ncloud.StringValue(inst.CloudMysqlInstanceStatusName); s == "terminating" || s == "deleting" {
+			continue
+		}
 		instanceNo := ncloud.StringValue(inst.CloudMysqlInstanceNo)
 		detail, err := p.instanceDetail(instanceNo)
 		if err != nil {
-			return nil, err
+			// Instance may have been deleted between list and detail calls; skip it.
+			continue
 		}
 		out = append(out, toDBInstance(detail, p.region))
 	}
@@ -178,7 +299,7 @@ func (p *NCPProvider) CreateInstance(_ context.Context, spec rdbinstance.CreateS
 		EngineVersionCode:          ncloud.String(spec.EngineVersion),
 		CloudMysqlProductCode:      ncloud.String(spec.InstanceClass),
 		IsBackup:                   ncloud.Bool(false),
-		IsHa: 						ncloud.Bool(false),
+		IsHa:                       ncloud.Bool(false),
 	})
 	if err != nil {
 		return models.DBInstance{}, fmt.Errorf("failed to create NCP Cloud MySQL instance: %w", err)

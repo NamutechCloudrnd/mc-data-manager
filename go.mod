@@ -37,6 +37,7 @@ require (
 	github.com/aliyun/alibabacloud-oss-go-sdk-v2 v1.3.0
 	github.com/aws/aws-sdk-go-v2/service/rds v1.119.3
 	github.com/go-co-op/gocron v1.37.0
+	github.com/joho/godotenv v1.5.1
 	github.com/openbao/openbao/api/v2 v2.5.1
 	github.com/rs/zerolog v1.33.0
 	github.com/swaggo/swag v1.16.3
