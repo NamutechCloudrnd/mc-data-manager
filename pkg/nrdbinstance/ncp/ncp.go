@@ -97,12 +97,8 @@ func toNRDBInstance(inst *vmongodb.CloudMongoDbInstance, region string) models.N
 		port = *inst.MemberPort
 	}
 
-	// private domain 기본, public domain이 있으면 덮어씌움
-	var endpoint string
+	endpoint := "-"
 	for _, srv := range inst.CloudMongoDbServerInstanceList {
-		if srv.PrivateDomain != nil && endpoint == "" {
-			endpoint = *srv.PrivateDomain
-		}
 		if srv.PublicDomain != nil && *srv.PublicDomain != "" {
 			endpoint = *srv.PublicDomain
 			break

@@ -95,20 +95,16 @@ func (p *AlibabaProvider) instanceEndpoint(instanceID string) (string, int32, er
 // pickEndpoint returns the best endpoint from a replica set role response.
 // VPC endpoint is used as fallback; public endpoint overrides if present.
 func pickEndpoint(replicaSets []*dds.DescribeReplicaSetRoleResponseBodyReplicaSetsReplicaSet) (string, int32) {
-	var privEP string
 	var privPort int32
 	for _, rs := range replicaSets {
-		switch tea.StringValue(rs.NetworkType) {
-		case "VPC":
-			if privEP == "" {
-				privEP = tea.StringValue(rs.ConnectionDomain)
-				privPort = parsePort(rs.ConnectionPort)
-			}
-		case "Public":
+		if tea.StringValue(rs.NetworkType) == "Public" {
 			return tea.StringValue(rs.ConnectionDomain), parsePort(rs.ConnectionPort)
 		}
+		if tea.StringValue(rs.NetworkType) == "VPC" {
+			privPort = parsePort(rs.ConnectionPort)
+		}
 	}
-	return privEP, privPort
+	return "-", privPort
 }
 
 // toNRDBInstance converts a DescribeDBInstances item to the CSP-agnostic model.

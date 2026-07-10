@@ -86,17 +86,6 @@ func splitDatabaseVersion(dbVersion string) (engine, version string) {
 	return
 }
 
-// publicIP returns the PRIMARY (public) IP from an instance's IpAddresses list,
-// or an empty string if none is assigned yet.
-func publicIP(addrs []*sqladmin.IpMapping) string {
-	for _, a := range addrs {
-		if a.Type == "PRIMARY" {
-			return a.IpAddress
-		}
-	}
-	return ""
-}
-
 // normalizeState maps GCP Cloud SQL instance states to lowercase equivalents,
 // mapping "RUNNABLE" to "available" to match the AWS/Alibaba convention.
 func normalizeState(state string) string {
@@ -105,7 +94,7 @@ func normalizeState(state string) string {
 		return "available"
 	case "PENDING_CREATE":
 		return "creating"
-	case "PENDING_DELETE": 
+	case "PENDING_DELETE":
 		return "deleting"
 	default:
 		return strings.ToLower(state)
@@ -119,6 +108,18 @@ func toDBInstance(inst *sqladmin.DatabaseInstance, region string) models.DBInsta
 	if inst.Settings != nil {
 		tier = inst.Settings.Tier
 	}
+
+	endpoint := ""
+	for _, a := range inst.IpAddresses {
+		if a.Type == "PRIMARY" {
+			endpoint = a.IpAddress
+			break
+		}
+		if a.Type == "PRIVATE" {
+			endpoint = "-"
+		}
+	}
+
 	return models.DBInstance{
 		Provider:      "gcp",
 		InstanceID:    inst.Name,
@@ -126,7 +127,7 @@ func toDBInstance(inst *sqladmin.DatabaseInstance, region string) models.DBInsta
 		Engine:        engine,
 		EngineVersion: engineVersion,
 		Status:        normalizeState(inst.State),
-		Endpoint:      publicIP(inst.IpAddresses),
+		Endpoint:      endpoint,
 		Port:          3306,
 		Region:        region,
 		InstanceClass: tier,

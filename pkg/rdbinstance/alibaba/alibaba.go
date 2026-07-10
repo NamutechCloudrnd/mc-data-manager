@@ -6,7 +6,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 
 	alibabards "github.com/alibabacloud-go/rds-20140815/v8/client"
 	"github.com/alibabacloud-go/tea/tea"
@@ -29,8 +28,6 @@ type AlibabaProvider struct {
 	client    *alibabards.Client
 	vpcClient *alibabavpc.Client
 	region    string
-	mu        sync.Mutex
-	failedIDs map[string]struct{}
 }
 
 // New builds an Alibaba RDS provider from static credentials and a region.
@@ -43,20 +40,7 @@ func New(accessKey, secretKey, region string) (rdbinstance.Provider, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Alibaba VPC client: %w", err)
 	}
-	return &AlibabaProvider{client: client, vpcClient: vpcClient, region: region, failedIDs: make(map[string]struct{})}, nil
-}
-
-func (p *AlibabaProvider) markFailed(instanceID string) {
-	p.mu.Lock()
-	p.failedIDs[instanceID] = struct{}{}
-	p.mu.Unlock()
-}
-
-func (p *AlibabaProvider) isFailed(instanceID string) bool {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	_, ok := p.failedIDs[instanceID]
-	return ok
+	return &AlibabaProvider{client: client, vpcClient: vpcClient, region: region} , nil
 }
 
 // buildCreateRequest maps a CSP-agnostic CreateSpec to an Alibaba
@@ -169,7 +153,6 @@ func normalizeStatus(s string) string {
 // pickEndpoint returns the connection string + port of the public endpoint if one
 // exists, otherwise the first non-public (private/inner) endpoint.
 func pickEndpoint(netInfos []*alibabards.DescribeDBInstanceNetInfoResponseBodyDBInstanceNetInfosDBInstanceNetInfo) (string, int32) {
-	var fallbackEP string
 	var fallbackPort int32
 	var haveFallback bool
 	for _, ni := range netInfos {
@@ -177,12 +160,14 @@ func pickEndpoint(netInfos []*alibabards.DescribeDBInstanceNetInfoResponseBodyDB
 			return tea.StringValue(ni.ConnectionString), parsePort(ni.Port)
 		}
 		if !haveFallback {
-			fallbackEP = tea.StringValue(ni.ConnectionString)
 			fallbackPort = parsePort(ni.Port)
 			haveFallback = true
 		}
 	}
-	return fallbackEP, fallbackPort
+	if haveFallback {
+		return "-", fallbackPort
+	}
+	return "-", 0
 }
 
 // toListedDBInstance converts a DescribeDBInstances item into the CSP-agnostic
@@ -246,9 +231,6 @@ func (p *AlibabaProvider) ListInstances(ctx context.Context) ([]models.DBInstanc
 				return nil, fmt.Errorf("failed to describe net info for %s: %w", id, err)
 			}
 			inst := toListedDBInstance(item, ep, port, p.region)
-			if p.isFailed(id) {
-				inst.Status = "failed"
-			}
 			out = append(out, inst)
 		}
 		if int32(len(items)) < pageSize {

@@ -32,7 +32,6 @@ func (p *AlibabaProvider) provisionInBackground(instanceID, masterUsername, mast
 
 	if err := p.createAccount(instanceID, masterUsername, masterPassword); err != nil {
 		logger.Error().Err(err).Msg("alibaba CreateAccount failed")
-		p.markFailed(instanceID)
 		return
 	}
 	logger.Info().Msg("alibaba account created")
