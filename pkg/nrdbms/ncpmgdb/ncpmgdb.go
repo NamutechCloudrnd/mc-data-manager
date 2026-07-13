@@ -90,13 +90,17 @@ func (n *NCPMongoDBMS) CreateTable(tableName string) error {
 
 // import table
 func (n *NCPMongoDBMS) ImportTable(tableName string, srcData *[]map[string]interface{}) error {
-	for _, data := range *srcData {
-		_, err := n.db.Collection(tableName).InsertOne(n.ctx, data)
-		if err != nil {
-			return err
-		}
+	if len(*srcData) == 0 {
+		return nil
 	}
-	return nil
+
+	docs := make([]interface{}, len(*srcData))
+	for i, data := range *srcData {
+		docs[i] = data
+	}
+
+	_, err := n.db.Collection(tableName).InsertMany(n.ctx, docs)
+	return err
 }
 
 // export table
