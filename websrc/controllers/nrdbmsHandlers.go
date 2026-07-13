@@ -51,6 +51,46 @@ func NRDBMSListTablesHandler(ctx echo.Context) error {
 	return ctx.JSON(http.StatusOK, models.NRDBTableListResponse{Tables: tables})
 }
 
+// NRDBMSListDatabasesHandler godoc
+//
+//	@ID			NRDBMSListDatabasesHandler
+//	@Summary	List databases in a NRDBMS (MongoDB) instance
+//	@Description	Connects to the MongoDB server using the target connection info
+//	@Description	and returns the names of the databases on the server.
+//	@Description	Supported providers: ncp (MongoDB), alibaba (MongoDB).
+//	@Tags			[NRDBMS]
+//	@Accept			json
+//	@Produce		json
+//	@Param			RequestBody	body		models.DataTask		true	"Target connection info (host, port, username, password)"
+//	@Success		200			{array}		string				"Database names"
+//	@Failure		500			{object}	map[string]string	"Internal Server Error"
+//	@Router			/db/nrdbms/databases [post]
+func NRDBMSListDatabasesHandler(ctx echo.Context) error {
+	start := time.Now()
+
+	logger, _ := pageLogInit(ctx, "nrdbms", "list databases in instance", start)
+
+	params := models.DataTask{}
+	if !getDataWithReBind(logger, start, ctx, &params) {
+		return ctx.JSON(http.StatusInternalServerError, map[string]string{"error": "invalid request body"})
+	}
+
+	NRDBC, err := auth.GetNRDMS(&params.TargetPoint)
+	if err != nil {
+		logger.Error().Err(err).Msg("NRDBController creation failed")
+		return ctx.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+
+	dbList, err := NRDBC.ListDatabases()
+	if err != nil {
+		logger.Error().Err(err).Msg("ListDatabases failed")
+		return ctx.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+
+	jobEnd(logger, "Successfully listed databases", start)
+	return ctx.JSON(http.StatusOK, dbList)
+}
+
 // NRDBMSCreateTableHandler godoc
 //
 //	@ID			NRDBMSCreateTableHandler

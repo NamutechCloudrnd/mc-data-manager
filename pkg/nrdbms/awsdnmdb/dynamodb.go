@@ -85,6 +85,12 @@ func (d *DynamoDBMS) ListTables() ([]string, error) {
 	return tables.TableNames, nil
 }
 
+// DynamoDB has no concept of multiple databases per instance, so this
+// returns an empty list.
+func (d *DynamoDBMS) ListDatabases() ([]string, error) {
+	return []string{}, nil
+}
+
 // Delete table
 func (d *DynamoDBMS) DeleteTables(tableName string) error {
 	_, err := d.client.DeleteTable(d.ctx, &dynamodb.DeleteTableInput{
