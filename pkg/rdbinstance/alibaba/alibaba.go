@@ -116,8 +116,6 @@ func parsePort(port *string) int32 {
 	return int32(v)
 }
 
-// toSnakeCase converts a CamelCase/PascalCase string to lower snake_case,
-// handling acronym boundaries (e.g., DBInstanceClassChanging → db_instance_class_changing).
 func toSnakeCase(s string) string {
 	runes := []rune(s)
 	var b strings.Builder

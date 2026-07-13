@@ -1,9 +1,3 @@
-// Package gcp implements nrdbinstance.Provider for GCP Firestore.
-//
-// GCP의 NoSQL 인스턴스 단위는 "Firestore Database"이다.
-// 하나의 GCP 프로젝트 안에 여러 Firestore Database를 생성할 수 있으며,
-// Firestore Admin API(google.golang.org/api/firestore/v1)를 통해 관리한다.
-//
 // CreateSpec.Type이 비어 있으면 "FIRESTORE_NATIVE"를 기본값으로 사용한다.
 package gcp
 

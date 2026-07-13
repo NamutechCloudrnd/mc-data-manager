@@ -61,3 +61,19 @@ type DBInstance struct {
 	Region        string `json:"region"`
 	InstanceClass string `json:"instanceClass"`
 }
+
+// RDBInstanceRecord is the persisted record of a created RDB (database) instance.
+type RDBInstanceRecord struct {
+	ID               uint64 `gorm:"primaryKey;autoIncrement"`
+	Provider         string `gorm:"column:provider;size:20;not null;uniqueIndex:idx_provider_region_instance"`
+	Region           string `gorm:"column:region;size:50;not null;uniqueIndex:idx_provider_region_instance"`
+	InstanceID       string `gorm:"column:instance_id;size:255;not null;uniqueIndex:idx_provider_region_instance"`
+	InstanceName     string `gorm:"column:instance_name;size:255;not null"`
+	CspInstanceName  string `gorm:"column:csp_instance_name;size:255;not null"`
+	PublicNetPending bool   `gorm:"column:public_net_pending;not null;default:false"` // only for alibaba
+	NamespaceID      string `gorm:"column:namespace_id;size:100;not null"`
+}
+
+func (RDBInstanceRecord) TableName() string {
+	return "tbRdbInstance"
+}

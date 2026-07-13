@@ -935,7 +935,7 @@ func handleRDBMSGenerateTask(params models.BasicDataTask) models.Status {
 		}
 		log.Info().Msgf("Import start: %s", sqlPath)
 		if err := RDBC.Put(string(data)); err != nil {
-			log.Error().Msgf("Put error importing into rdbms")
+			log.Error().Msgf("Put error importing into rdbms: %v", err)
 			return models.StatusFailed
 		}
 		log.Info().Msgf("Import success: %s", sqlPath)
@@ -1091,7 +1091,7 @@ func handleRDBMSRestoreTask(params models.BasicDataTask) models.Status {
 		}
 		log.Info().Msgf("Import start: %s", sqlPath)
 		if err := RDBC.Put(string(data)); err != nil {
-			log.Error().Msg("Put error importing into rdbms")
+			log.Error().Msgf("Put error importing into rdbms: %v", err)
 			return models.StatusFailed
 		}
 		log.Info().Msgf("Import success: %s", sqlPath)
@@ -1148,7 +1148,7 @@ func handleNRDBMSGenerateTask(params models.BasicDataTask) models.Status {
 
 		log.Info().Msgf("Import start: %s", fileName)
 		if err := NRDBC.Put(tableName, &srcData); err != nil {
-			log.Error().Msgf("Put error importing into nrdbms")
+			log.Error().Msgf("Put error importing into nrdbms: %v", err)
 			return models.StatusFailed
 		}
 		log.Info().Msgf("successfully imported : %s", params.Dummy.DummyPath)
@@ -1317,7 +1317,7 @@ func handleNRDBMSRestoreTask(params models.BasicDataTask) models.Status {
 
 		log.Info().Msgf("Import start: %s", fileName)
 		if err := NRDBC.Put(tableName, &srcData); err != nil {
-			log.Error().Msg("Put error importing into nrdbms")
+			log.Error().Msgf("Put error importing into nrdbms: %v", err)
 			return models.StatusFailed
 		}
 		log.Info().Msgf("successfully Restore : %s", params.SourcePoint.Path)

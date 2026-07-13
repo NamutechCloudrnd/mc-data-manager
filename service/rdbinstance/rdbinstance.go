@@ -17,7 +17,14 @@ import (
 	awsprovider "github.com/cloud-barista/mc-data-manager/pkg/rdbinstance/aws"
 	gcpprovider "github.com/cloud-barista/mc-data-manager/pkg/rdbinstance/gcp"
 	ncpprovider "github.com/cloud-barista/mc-data-manager/pkg/rdbinstance/ncp"
+	"github.com/cloud-barista/mc-data-manager/repository"
 )
+
+// repo returns the namespace-scoped RDB instance repository, backed by the
+// shared config.DB connection (set up by config.InitDB() at server startup).
+func repo() *repository.RDBInstanceRepository {
+	return repository.NewRDBInstanceRepository(config.DB)
+}
 
 // providerFor selects and constructs the provider implementation for the given
 // CSP, using the supplied credentials and region.
