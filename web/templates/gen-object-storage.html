@@ -75,6 +75,11 @@
                             <option value="{{ $value }}">{{ $value }}</option>
                             {{ end }}
                         </optgroup>
+                        <optgroup label="NHN regions" data-provider="nhn" style="display:none;">
+                            {{ range $index, $value := .NHNRegions }}
+                            <option value="{{ $value }}">{{ $value }}</option>
+                            {{ end }}
+                        </optgroup>
                     </select>
                     <label for="targetRegionSelect">Select Region</label>
                 </div>
@@ -88,6 +93,9 @@
                         <span class="input-group-text"><i class="bi bi-search"></i></span>
                         <input type="text" class="form-control" id="bucket-search" placeholder="Search by name">
                     </div>
+                    <button type="button" class="btn btn-danger btn-sm" id="deleteInstanceBtn" disabled>
+                        <i class="bi bi-trash3 me-1"></i>Delete
+                    </button>
                     <button type="button" class="btn btn-primary btn-sm" id="openCreateBtn" disabled>
                         <i class="bi bi-plus-lg me-1"></i>Bucket
                     </button>
@@ -98,16 +106,17 @@
             <table class="table table-bordered table-sm mb-0">
                 <thead>
                     <tr>
+                        <th>Resource ID</th>
                         <th>Name</th>
+                        <th>Region</th>
                         <th>Status</th>
-                        <th>Creation Date</th>
-                        <th>Connection</th>
-                        <th style="width:44px;"></th>
+                        <th>Created</th>
+                        <th style="width:76px;"></th>
                     </tr>
                 </thead>
                 <tbody id="bucket-table-body">
                     <tr>
-                        <td colspan="5" class="text-center text-muted small py-3">Select a credential and region to list buckets</td>
+                        <td colspan="6" class="text-center text-muted small py-3">Select a credential to list buckets</td>
                     </tr>
                 </tbody>
             </table>
@@ -198,9 +207,6 @@
 
         <div class="offcanvas-footer p-3 border-top d-flex flex-column gap-2">
             <button type="button" class="btn btn-primary w-100 d-none" id="ocCreateBtn" disabled>Create</button>
-            <button type="button" class="btn btn-danger w-100 d-none" id="ocDeleteBtn">
-                <i class="bi bi-trash3 me-1"></i>Delete Bucket
-            </button>
         </div>
     </div>
 
@@ -288,6 +294,8 @@ document.addEventListener('DOMContentLoaded', function () {
     let bucketPage     = 1;
     let bucketQuery    = '';
     let browseBucket   = null;   // 오브젝트 탐색(Offcanvas) 중인 버킷 { name }
+    let deleteBucketTarget = null; // 삭제 확인 모달 대상 { name, region }
+    let selectedBucketRegion = null; // 선택된 버킷의 실제 리전 (Delete 시 사용)
     let allObjects     = [];     // flat 전체 오브젝트 — 가상 폴더 그루핑의 원본
     let objectPage     = 1;
     let currentPrefix  = '';     // 가상 폴더 경로 (예: "dir1/dir2/")
@@ -305,7 +313,6 @@ document.addEventListener('DOMContentLoaded', function () {
     const sectionCreate  = document.getElementById('section-create');
     const sectionObjects = document.getElementById('section-objects');
     const ocCreateBtn   = document.getElementById('ocCreateBtn');
-    const ocDeleteBtn   = document.getElementById('ocDeleteBtn');
     const ocTitle       = document.getElementById('oc-title');
     const bucketNameInput = document.getElementById('oc-bucket-name');
     const offcanvasEl   = document.getElementById('bucketOffcanvas');
@@ -351,15 +358,29 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     // ── targetPoint 구성 (provider별 endpoint 규칙 포함) ──
+    // extra.region이 있으면 선택된 region 대신 사용 (버킷별 리전으로 탐색/삭제할 때)
     function buildTargetPoint(extra) {
         const provider = getProvider();
-        const tp = { provider, region: regionSelect.value };
+        const tp = Object.assign({ provider, region: regionSelect.value }, extra || {});
         if (provider === 'ncp') {
-            tp.endpoint = endpointInput.value || 'https://kr.object.ncloudstorage.com';
+            tp.endpoint = tp.endpoint || endpointInput.value || 'https://kr.object.ncloudstorage.com';
         } else if (provider === 'alibaba') {
-            tp.endpoint = endpointInput.value || resolveAlibabaEndpoint(tp.region);
+            tp.endpoint = tp.endpoint || endpointInput.value || resolveAlibabaEndpoint(tp.region);
         }
-        return Object.assign(tp, extra || {});
+        return tp;
+    }
+
+    // 버킷의 소속 리전 (connectionConfig 우선, 없으면 connectionName에서 추출)
+    function bucketRegion(b) {
+        return b.connectionConfig?.regionZoneInfo?.assignedRegion
+            || (b.connectionName || '').replace(`${getProvider()}-`, '')
+            || '';
+    }
+
+    // Created 컬럼: conditions에서 type === 'Ready'인 조건의 lastTransitionTime만 사용
+    function bucketReadyTime(b) {
+        const c = (b.conditions || []).find(x => x.type === 'Ready');
+        return c ? c.lastTransitionTime : '';
     }
 
     function updateOcContext() {
@@ -374,7 +395,11 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     function updateToolbarBtn() {
-        openCreateBtn.disabled = !hasContext();
+        // + Bucket은 버킷이 선택되지 않았을 때만 활성화 (선택 상태면 비활성).
+        // 새 버킷 생성은 미선택 상태에서만 하도록 유도.
+        openCreateBtn.disabled = !hasContext() || !!targetBucketInput.value.trim();
+        // Delete는 버킷이 선택됐을 때만 활성화 — 버킷 삭제의 유일한 진입점
+        document.getElementById('deleteInstanceBtn').disabled = !targetBucketInput.value.trim();
     }
 
     function updateSubmitBtn() {
@@ -391,14 +416,20 @@ document.addEventListener('DOMContentLoaded', function () {
     // ── 버킷 테이블 ──────────────────────────────────────
     function makeBucketRow(b) {
         const isSelected = targetBucketInput.value.trim() === b.name;
+        const region = bucketRegion(b);
+        // connectionName은 항상 '{provider}-{region}'이라 옵션값과 일치한다 (NCP 매칭용)
+        const connRegion = (b.connectionName || '').replace(`${getProvider()}-`, '');
+        // 표시용 리전명은 regionDetail.regionName, 없으면 기존 파생 리전값
+        const regionName = b.connectionConfig?.regionDetail?.regionName || region;
         return `<tr class="bucket-row${isSelected ? ' table-active' : ''}" style="cursor:pointer;"
-                data-name="${esc(b.name)}" data-status="${esc(b.status || '')}">
+                data-name="${esc(b.name)}" data-status="${esc(b.status || '')}" data-region="${esc(region)}" data-conn-region="${esc(connRegion)}">
+            <td class="small text-truncate" style="max-width:180px;" title="${esc(b.cspResourceId || '')}">${esc(b.cspResourceId || '-')}</td>
             <td class="small">${esc(b.name)}</td>
+            <td class="small">${esc(regionName)}</td>
             <td>${statusBadge(b.status)}</td>
-            <td class="small">${fmtDate(b.creationDate)}</td>
-            <td class="small text-truncate" style="max-width:180px;" title="${esc(b.connectionName)}">${esc(b.connectionName)}</td>
-            <td class="text-center">
-                <button type="button" class="btn btn-link btn-sm p-0 bucket-browse-btn" data-name="${esc(b.name)}" title="Browse objects">
+            <td class="small text-nowrap">${esc(formatKstDate(bucketReadyTime(b)))}</td>
+            <td class="text-center text-nowrap">
+                <button type="button" class="btn btn-link btn-sm p-0 bucket-browse-btn" data-name="${esc(b.name)}" data-region="${esc(region)}" title="Browse objects">
                     <i class="bi bi-folder2-open"></i>
                 </button>
             </td>
@@ -420,7 +451,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (bucketPage > totalPages) bucketPage = totalPages;
 
         if (!filtered.length) {
-            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted small py-3">No buckets found</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted small py-3">No buckets found</td></tr>';
         } else {
             const start = (bucketPage - 1) * PAGE_SIZE;
             tbody.innerHTML = filtered.slice(start, start + PAGE_SIZE).map(makeBucketRow).join('');
@@ -430,7 +461,7 @@ document.addEventListener('DOMContentLoaded', function () {
             tbody.querySelectorAll('.bucket-browse-btn').forEach(btn => {
                 btn.addEventListener('click', e => {
                     e.stopPropagation();
-                    openBrowse(btn.dataset.name);
+                    openBrowse(btn.dataset.name, btn.dataset.region);
                 });
             });
         }
@@ -473,35 +504,33 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     async function loadBuckets() {
-        if (!hasContext()) {
+        const provider = getProvider();
+        if (!provider || provider === 'none') {
             allBuckets = [];
             clearTarget();
             document.getElementById('bucket-table-body').innerHTML =
-                '<tr><td colspan="5" class="text-center text-muted small py-3">Select a credential and region to list buckets</td></tr>';
+                '<tr><td colspan="6" class="text-center text-muted small py-3">Select a credential to list buckets</td></tr>';
             document.getElementById('bucket-pagination').innerHTML = '';
             return;
         }
         const tbody = document.getElementById('bucket-table-body');
-        tbody.innerHTML = '<tr><td colspan="5" class="text-center py-3"><span class="spinner-border spinner-border-sm text-muted"></span></td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center py-3"><span class="spinner-border spinner-border-sm text-muted"></span></td></tr>';
         try {
-            const res = await fetch(`/objectstorage/buckets?filterKey=providerName&filterVal=${encodeURIComponent(getProvider())}`, {
+            const res = await fetch(`/objectstorage/buckets?filterKey=providerName&filterVal=${encodeURIComponent(provider)}`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ targetPoint: buildTargetPoint() })
             });
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const json = await res.json();
-            // Tumblebug 목록 API는 리전 무관하게 ns에 등록된 버킷 전체를 반환하므로
-            // 선택된 provider-region 커넥션으로 만든 버킷만 남긴다
-            const connName = `${getProvider()}-${regionSelect.value}`.toLowerCase();
+            // provider 전체 버킷 표시 (리전 필터 없음). 각 행이 자신의 리전을 표시하며,
+            // 탐색/삭제는 행의 data-region(버킷 소속 리전)으로 호출한다
             const buckets = (json.objectStorage || []).filter(b =>
-                (b.connectionName || '').toLowerCase() === connName ||
-                ((b.connectionConfig?.providerName || '').toLowerCase() === getProvider().toLowerCase() &&
-                 (b.connectionConfig?.regionZoneInfo?.assignedRegion || '').toLowerCase() === regionSelect.value.toLowerCase())
+                (b.connectionConfig?.providerName || b.connectionName || '').toLowerCase().startsWith(provider.toLowerCase())
             );
             renderBuckets(buckets);
         } catch (e) {
             console.error('loadBuckets:', e);
-            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-danger small py-3">Failed to load bucket list</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center text-danger small py-3">Failed to load bucket list</td></tr>';
             document.getElementById('bucket-pagination').innerHTML = '';
         }
     }
@@ -514,13 +543,27 @@ document.addEventListener('DOMContentLoaded', function () {
             return;
         }
         targetBucketInput.value = name;
+        selectedBucketRegion = row.dataset.region || regionSelect.value; // Delete 시 버킷 실제 리전 사용
+        // 목록이 provider 전체 버킷을 보여주므로, Generate(FormData의 targetPoint[region])가
+        // 버킷의 실제 리전을 향하도록 region select를 조용히 동기화 (change 미발생 — clearTarget 루프 방지).
+        // 대소문자 무시 매칭 + NCP는 assignedRegion 형식이 옵션과 달라 connectionName 파생값으로 매칭.
+        const matched = matchRegionOption(regionSelect, row.dataset.region, row.dataset.connRegion);
+        if (matched) {
+            if (regionSelect.value !== matched) regionSelect.value = matched;
+            selectedBucketRegion = matched;
+            updateToolbarBtn();
+            updateOcContext();
+        }
         updateSubmitBtn();
+        updateToolbarBtn(); // 버킷 선택됨 → + Bucket 비활성
         syncRowHighlight();
     }
 
     function clearTarget() {
         targetBucketInput.value = '';
+        selectedBucketRegion = null;
         updateSubmitBtn();
+        updateToolbarBtn(); // 버킷 미선택 → + Bucket 재활성, Delete 비활성
         syncRowHighlight();
     }
 
@@ -531,7 +574,6 @@ document.addEventListener('DOMContentLoaded', function () {
         sectionCreate.classList.remove('d-none');
         sectionObjects.classList.add('d-none');
         ocCreateBtn.classList.remove('d-none');
-        ocDeleteBtn.classList.add('d-none');
         bucketNameInput.value = '';
         document.getElementById('bucket-name-feedback').classList.add('d-none');
         ocCreateBtn.disabled = true;
@@ -539,15 +581,15 @@ document.addEventListener('DOMContentLoaded', function () {
         offcanvas.show();
     }
 
-    function openBrowse(name) {
-        browseBucket = { name };
+    function openBrowse(name, region) {
+        // region: 버킷 소속 리전 — 선택된 region과 다를 수 있으므로 탐색/삭제에 이 값을 사용
+        browseBucket = { name, region: region || regionSelect.value };
         ocMode = 'objects';
         currentPrefix = '';
         ocTitle.innerHTML = `<i class="bi bi-bucket me-2 text-primary"></i>${esc(name)}`;
         sectionCreate.classList.add('d-none');
         sectionObjects.classList.remove('d-none');
         ocCreateBtn.classList.add('d-none');
-        ocDeleteBtn.classList.remove('d-none');
         updateOcContext();
         offcanvas.show();
         loadObjects();
@@ -606,38 +648,47 @@ document.addEventListener('DOMContentLoaded', function () {
         document.getElementById('deleteConfirmBtn').disabled = true;
     });
 
-    ocDeleteBtn.addEventListener('click', function () {
-        if (!browseBucket) return;
-        document.getElementById('delete-bucket-name').textContent = browseBucket.name;
+    // 삭제 확인 모달 열기 — 유일한 진입점: 툴바 #deleteInstanceBtn (선택된 버킷 대상)
+    function openBucketDeleteModal(name, region) {
+        deleteBucketTarget = { name, region: region || regionSelect.value };
+        document.getElementById('delete-bucket-name').textContent = name;
         deleteConfirmModal.show();
+    }
+
+    document.getElementById('deleteInstanceBtn').addEventListener('click', function () {
+        const name = targetBucketInput.value.trim();
+        if (!name) return;
+        openBucketDeleteModal(name, selectedBucketRegion || regionSelect.value);
     });
 
     document.getElementById('delete-bucket-input').addEventListener('input', function () {
-        if (!browseBucket) return;
-        const match = this.value === browseBucket.name;
+        if (!deleteBucketTarget) return;
+        const match = this.value === deleteBucketTarget.name;
         const isEmpty = !this.value;
         document.getElementById('delete-bucket-error').classList.toggle('d-none', isEmpty || match);
         document.getElementById('deleteConfirmBtn').disabled = !match;
     });
 
     document.getElementById('deleteConfirmBtn').addEventListener('click', async function () {
-        if (!browseBucket) return;
+        if (!deleteBucketTarget) return;
+        const { name, region } = deleteBucketTarget;
         const btn = this;
         btn.disabled = true;
         btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Deleting...';
         try {
             const res = await fetch('/objectstorage/buckets', {
                 method: 'DELETE', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ targetPoint: buildTargetPoint({ bucket: browseBucket.name }) })
+                body: JSON.stringify({ targetPoint: buildTargetPoint({ bucket: name, region }) })
             });
             if (!res.ok) {
                 const json = await res.json().catch(() => ({}));
                 throw new Error(json.Result || `HTTP ${res.status}`);
             }
             deleteConfirmModal.hide();
-            offcanvas.hide();
-            if (targetBucketInput.value.trim() === browseBucket.name) clearTarget();
-            browseBucket = null;
+            // 탐색 중이던 버킷을 삭제했으면 Offcanvas도 닫는다
+            if (browseBucket && browseBucket.name === name) { offcanvas.hide(); browseBucket = null; }
+            if (targetBucketInput.value.trim() === name) clearTarget();
+            deleteBucketTarget = null;
             loadBuckets();
         } catch (err) {
             alert('Failed to delete bucket: ' + err.message);
@@ -761,7 +812,7 @@ document.addEventListener('DOMContentLoaded', function () {
         try {
             const res = await fetch('/objectstorage/buckets/objects', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ targetPoint: buildTargetPoint({ bucket: browseBucket.name }) })
+                body: JSON.stringify({ targetPoint: buildTargetPoint({ bucket: browseBucket.name, region: browseBucket.region }) })
             });
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const json = await res.json();
@@ -791,7 +842,7 @@ document.addEventListener('DOMContentLoaded', function () {
         try {
             const res = await fetch('/objectstorage/buckets/object', {
                 method: 'DELETE', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ targetPoint: buildTargetPoint({ bucket: browseBucket.name }), objectKey: key })
+                body: JSON.stringify({ targetPoint: buildTargetPoint({ bucket: browseBucket.name, region: browseBucket.region }), objectKey: key })
             });
             if (!res.ok) {
                 const json = await res.json().catch(() => ({}));
@@ -818,9 +869,10 @@ document.addEventListener('DOMContentLoaded', function () {
 
     openCreateBtn.addEventListener('click', enterCreateMode);
 
-    // Target Bucket 직접 입력: Submit 활성화 + 목록 하이라이트 동기화
+    // Target Bucket 직접 입력: Submit 활성화 + 목록 하이라이트 + + Bucket 버튼 동기화
     targetBucketInput.addEventListener('input', () => {
         updateSubmitBtn();
+        updateToolbarBtn();
         syncRowHighlight();
     });
 
