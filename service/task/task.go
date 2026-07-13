@@ -1320,7 +1320,7 @@ func handleNRDBMSRestoreTask(params models.BasicDataTask) models.Status {
 			log.Error().Msgf("Put error importing into nrdbms: %v", err)
 			return models.StatusFailed
 		}
-		log.Info().Msgf("successfully Restore : %s", params.SourcePoint.Path)
+		log.Info().Msgf("successfully Restore : %s, %s", params.SourcePoint.Path, fileName)
 	}
 	return models.StatusCompleted
 

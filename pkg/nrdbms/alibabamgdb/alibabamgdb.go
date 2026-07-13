@@ -90,13 +90,17 @@ func (a *AlibabaMongoDBMS) CreateTable(tableName string) error {
 
 // import table
 func (a *AlibabaMongoDBMS) ImportTable(tableName string, srcData *[]map[string]interface{}) error {
-	for _, data := range *srcData {
-		_, err := a.db.Collection(tableName).InsertOne(a.ctx, data)
-		if err != nil {
-			return err
-		}
+	if len(*srcData) == 0 {
+		return nil
 	}
-	return nil
+
+	docs := make([]interface{}, len(*srcData))
+	for i, data := range *srcData {
+		docs[i] = data
+	}
+
+	_, err := a.db.Collection(tableName).InsertMany(a.ctx, docs)
+	return err
 }
 
 // export table

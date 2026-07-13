@@ -116,8 +116,11 @@
                                                 <span class="input-group-text"><i class="bi bi-search"></i></span>
                                                 <input type="text" class="form-control" id="src-rdbms-search" placeholder="Search by name">
                                             </div>
-                                            <button type="button" class="btn btn-danger btn-sm" id="src-deleteInstanceBtn" disabled>
+                                            <button type="button" class="btn btn-danger btn-sm" id="src-rdbms-deleteBtn" disabled>
                                                 <i class="bi bi-trash3 me-1"></i>Delete
+                                            </button>
+                                            <button type="button" class="btn btn-primary btn-sm" id="src-rdbms-createBtn" disabled>
+                                                <i class="bi bi-plus-lg me-1"></i>Instance
                                             </button>
                                         </div>
                                     </div>
@@ -128,13 +131,13 @@
                                                 <th>Name</th>
                                                 <th>Status</th>
                                                 <th>Version</th>
-                                                <th>Host (endpoint)</th>
+                                                <th>Host</th>
                                                 <th>Port</th>
-                                                <th>InstanceClass</th>
+                                                <th>Instance Class</th>
                                             </tr>
                                         </thead>
                                         <tbody id="src-rdbms-table-body">
-                                            <tr><td colspan="7" class="text-center text-muted small py-3">Credential과 Region을 선택하면 인스턴스 목록을 조회합니다</td></tr>
+                                            <tr><td colspan="7" class="text-center text-muted small py-3">Select a credential and region to list instances</td></tr>
                                         </tbody>
                                     </table>
                                     <div id="src-rdbms-pagination" class="mt-2 mb-3"></div>
@@ -154,7 +157,7 @@
                                                 <label for="mysql-srcPort">Port</label>
                                             </div>
                                         </div>
-                                        <div class="input-group mb-3">
+                                        <div class="input-group mb-1">
                                             <span class="input-group-text rounded-start"><i class="fa-solid fa-user"></i></span>
                                             <div class="form-floating">
                                                 <input type="text" class="form-control rounded-end" id="mysql-srcUsername" name="sourcePoint[username]" placeholder="Username" autocomplete="username" required>
@@ -162,6 +165,7 @@
                                             </div>
                                         </div>
                                         <div id="src-username-feedback" class="text-danger small ps-2 d-none mb-2"></div>
+                                        <div id="src-username-help" class="text-muted small ps-2 mb-2"></div>
                                         <div class="input-group mb-3">
                                             <span class="input-group-text rounded-start"><i class="fa-solid fa-lock"></i></span>
                                             <div class="form-floating">
@@ -386,8 +390,11 @@
                                                 <span class="input-group-text"><i class="bi bi-search"></i></span>
                                                 <input type="text" class="form-control" id="tgt-rdbms-search" placeholder="Search by name">
                                             </div>
-                                            <button type="button" class="btn btn-danger btn-sm" id="tgt-deleteInstanceBtn" disabled>
+                                            <button type="button" class="btn btn-danger btn-sm" id="tgt-rdbms-deleteBtn" disabled>
                                                 <i class="bi bi-trash3 me-1"></i>Delete
+                                            </button>
+                                            <button type="button" class="btn btn-primary btn-sm" id="tgt-rdbms-createBtn" disabled>
+                                                <i class="bi bi-plus-lg me-1"></i>Instance
                                             </button>
                                         </div>
                                     </div>
@@ -398,18 +405,18 @@
                                                 <th>Name</th>
                                                 <th>Status</th>
                                                 <th>Version</th>
-                                                <th>Host (endpoint)</th>
+                                                <th>Host</th>
                                                 <th>Port</th>
                                                 <th>InstanceClass</th>
                                             </tr>
                                         </thead>
                                         <tbody id="tgt-rdbms-table-body">
-                                            <tr><td colspan="7" class="text-center text-muted small py-3">Credential과 Region을 선택하면 인스턴스 목록을 조회합니다</td></tr>
+                                            <tr><td colspan="7" class="text-center text-muted small py-3">Select a credential and region to list instances</td></tr>
                                         </tbody>
                                     </table>
                                     <div id="tgt-rdbms-pagination" class="mt-2 mb-3"></div>
                                     <!-- Host / Port (auto-filled from instance, readonly) -->
-                                    <div class="input-group mb-3">
+                                    <div class="input-group mb-1">
                                         <span class="input-group-text rounded-start"><i class="fa-solid fa-house"></i></span>
                                         <div class="form-floating">
                                             <input type="text" class="form-control rounded-end bg-light" id="mysql-destHost" name="targetPoint[host]" placeholder="Host / IP" readonly required>
@@ -431,6 +438,7 @@
                                         </div>
                                     </div>
                                     <div id="tgt-username-feedback" class="text-danger small ps-2 d-none mb-2"></div>
+                                    <div id="tgt-username-help" class="text-muted small ps-2 mb-2"></div>
                                     <div class="input-group mb-3">
                                         <span class="input-group-text rounded-start"><i class="fa-solid fa-lock"></i></span>
                                         <div class="form-floating">
@@ -680,34 +688,13 @@
             </div>
             <button type="submit" class="btn btn-primary rounded-3 float-end" id="submitBtn" disabled>Submit</button>
 
-            <!-- ── Delete Confirmation Modal (shared by source + target tables) ── -->
-            <div class="modal fade" id="deleteConfirmModal" tabindex="-1" aria-hidden="true">
-                <div class="modal-dialog modal-dialog-centered">
-                    <div class="modal-content">
-                        <div class="modal-header border-bottom-0 pb-1">
-                            <h5 class="modal-title text-danger fw-semibold">
-                                <i class="bi bi-exclamation-triangle-fill me-2"></i>Delete Instance
-                            </h5>
-                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                        </div>
-                        <div class="modal-body pt-1">
-                            <p class="mb-2 small">You are about to permanently delete <strong id="delete-instance-name"></strong>.</p>
-                            <p class="mb-3 small" id="delete-modal-instruction">To delete this instance, enter its Name.</p>
-                            <input type="text" class="form-control" id="delete-username-input" placeholder="Name" autocomplete="off">
-                            <div id="delete-username-error" class="text-danger small mt-1 d-none">Name does not match.</div>
-                        </div>
-                        <div class="modal-footer">
-                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                            <button type="button" class="btn btn-danger" id="deleteConfirmBtn" disabled>
-                                <i class="bi bi-trash3 me-1"></i>Delete
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
         </form>
     </div>
 </div>
+
+{{ template "db-instance-panel.html" . }}
+{{ template "sample-data-panel.html" . }}
+
 <style>
 @keyframes ic-spin      { to { transform: rotate(360deg); } }
 @keyframes ic-spin-slow { to { transform: rotate(360deg); } }
@@ -1136,10 +1123,9 @@
     let srcRdbmsAllRows = [], srcRdbmsPage = 1;
     const SRC_PAGE_SIZE = 10;
 
-    // Single-row selection state (shared delete confirmation modal below)
+    // Single-row selection state
     let selectedSrcInstance = null;   // {instanceId, name, endpoint, port} or null
     let selectedTgtInstance = null;
-    let deleteModalContext = null;    // 'src' | 'tgt' — which table's delete button opened the modal
 
     function srcRdbmsStatusBadge(status) {
         const s = (status || '').toLowerCase();
@@ -1209,13 +1195,12 @@
     function onSrcRdbmsRowClick(row) {
         if (row.dataset.available !== '1') return;
         const d = row.dataset;
-        const deleteBtn = document.getElementById('src-deleteInstanceBtn');
         if (selectedSrcInstance && selectedSrcInstance.instanceId === d.instanceId) {
             selectedSrcInstance = null;
             row.classList.remove('table-active');
             document.getElementById('src-rdbms-connect-section').style.display = 'none';
             document.getElementById('src-rdbms-db-section').style.display = 'none';
-            deleteBtn.disabled = true;
+            srcDbiPanel.refreshButtons();
             return;
         }
         document.querySelectorAll('#src-rdbms-table-body tr.src-rdbms-row.table-active').forEach(r => r.classList.remove('table-active'));
@@ -1225,62 +1210,63 @@
         document.getElementById('mysql-srcPort').value = d.port;
         document.getElementById('src-rdbms-connect-section').style.display = '';
         document.getElementById('src-rdbms-db-section').style.display = 'none';
-        deleteBtn.disabled = false;
         applySourceProviderRules();
+        autoSelectContext('source', d.instanceId);
+        srcDbiPanel.refreshButtons();
+    }
+
+    // provider별 username 정책을 검증 메시지가 아닌 helper 안내로 표시 (요구사항 3)
+    function usernameHelpText(provider) {
+        switch ((provider || '').toLowerCase()) {
+            case 'gcp':     return "Only 'root' is allowed.";
+            case 'alibaba': return "'admin' and 'root' are not allowed.";
+            case 'ncp':     return "Not allowed: root, admin, radmin, agent, api_admin, ha_admin, ragent, repl_admin, mysql.session, mysql.sys.";
+            case 'aws':     return "Reserved words are not allowed.";
+            default:        return '';
+        }
+    }
+
+    // 확실한 클라이언트 규칙(gcp=root만, alibaba=admin/root 금지, ncp=금지어)은 입력 즉시 검증 메시지로 표시.
+    // 그 외 예약어 등은 helper 안내 + API 응답으로 커버 (gen-mysql과 동일 정책).
+    const SQL_NCP_BLOCKED_USERNAMES = ['root','admin','radmin','agent','api_admin','ha_admin',
+        'ragent','repl_admin','mysql.session','mysql.sys'];
+    function sqlUsernameError(provider, val) {
+        const v = (val || '').trim();
+        if (!v) return '';
+        const p = (provider || '').toLowerCase();
+        const lc = v.toLowerCase();
+        if (p === 'gcp' && lc !== 'root') return "Only 'root' is allowed.";
+        if (p === 'alibaba' && (lc === 'admin' || lc === 'root')) return `'${v}' is not allowed as a username.`;
+        if (p === 'ncp' && SQL_NCP_BLOCKED_USERNAMES.includes(lc)) return `'${v}' is not allowed as a username.`;
+        return '';
     }
 
     function applySourceProviderRules() {
         const provider = (document.getElementById('sourcePoint[provider]')?.value || '').toLowerCase();
-        const usernameEl = document.getElementById('mysql-srcUsername');
-        const feedbackEl = document.getElementById('src-username-feedback');
-        if (provider === 'gcp') {
-            usernameEl.value = 'root';
-            usernameEl.readOnly = true;
-            feedbackEl.classList.add('d-none');
-            feedbackEl.textContent = '';
-        } else {
-            usernameEl.readOnly = false;
-            if (provider === 'alibaba') {
-                const val = usernameEl.value.trim().toLowerCase();
-                if (val === 'admin' || val === 'root') {
-                    feedbackEl.textContent = "'admin' 또는 'root'는 사용할 수 없습니다.";
-                    feedbackEl.classList.remove('d-none');
-                } else {
-                    feedbackEl.classList.add('d-none');
-                    feedbackEl.textContent = '';
-                }
-            } else {
-                feedbackEl.classList.add('d-none');
-                feedbackEl.textContent = '';
-            }
+        const unEl = document.getElementById('mysql-srcUsername');
+        unEl.readOnly = false;
+        const fb = document.getElementById('src-username-feedback');
+        if (fb) {
+            const msg = sqlUsernameError(provider, unEl.value);
+            fb.textContent = msg;
+            fb.classList.toggle('d-none', !msg);
         }
+        const help = document.getElementById('src-username-help');
+        if (help) help.textContent = usernameHelpText(provider);
     }
 
     function applyTargetProviderRules() {
         const provider = (document.getElementById('targetPoint[provider]')?.value || '').toLowerCase();
-        const usernameEl = document.getElementById('mysql-destUsername');
-        const feedbackEl = document.getElementById('tgt-username-feedback');
-        if (provider === 'gcp') {
-            usernameEl.value = 'root';
-            usernameEl.readOnly = true;
-            feedbackEl.classList.add('d-none');
-            feedbackEl.textContent = '';
-        } else {
-            usernameEl.readOnly = false;
-            if (provider === 'alibaba') {
-                const val = usernameEl.value.trim().toLowerCase();
-                if (val === 'admin' || val === 'root') {
-                    feedbackEl.textContent = "'admin' 또는 'root'는 사용할 수 없습니다.";
-                    feedbackEl.classList.remove('d-none');
-                } else {
-                    feedbackEl.classList.add('d-none');
-                    feedbackEl.textContent = '';
-                }
-            } else {
-                feedbackEl.classList.add('d-none');
-                feedbackEl.textContent = '';
-            }
+        const unEl = document.getElementById('mysql-destUsername');
+        unEl.readOnly = false;
+        const fb = document.getElementById('tgt-username-feedback');
+        if (fb) {
+            const msg = sqlUsernameError(provider, unEl.value);
+            fb.textContent = msg;
+            fb.classList.toggle('d-none', !msg);
         }
+        const help = document.getElementById('tgt-username-help');
+        if (help) help.textContent = usernameHelpText(provider);
     }
 
     document.getElementById('mysql-srcUsername').addEventListener('input', applySourceProviderRules);
@@ -1306,7 +1292,6 @@
         tbody.innerHTML = '<tr><td colspan="7" class="text-center py-3"><span class="spinner-border spinner-border-sm"></span></td></tr>';
         document.getElementById('src-rdbms-connect-section').style.display = 'none';
         document.getElementById('src-rdbms-db-section').style.display = 'none';
-        document.getElementById('src-deleteInstanceBtn').disabled = true;
         selectedSrcInstance = null;
 
         fetch('/db/rdbms', {
@@ -1335,7 +1320,7 @@
         const provider = document.getElementById('sourcePoint[provider]')?.value || '';
         const region = getSrcRegion();
         if (!host || !port || !username || !password) {
-            alert('Host, Port, Username, Password를 모두 입력해주세요.');
+            alert('Please enter Host, Port, Username, and Password.');
             return;
         }
         const btn = document.getElementById('src-load-db-btn');
@@ -1358,20 +1343,12 @@
             });
             document.getElementById('src-rdbms-db-section').style.display = '';
         })
-        .catch(err => alert(`DB 조회 실패: ${err}`))
+        .catch(err => alert(`Failed to load databases: ${err}`))
         .finally(() => { btn.disabled = false; btn.innerHTML = 'Load Databases'; });
     }
 
     document.getElementById('src-rdbms-search').addEventListener('input', () => { srcRdbmsPage = 1; renderSrcRdbmsTable(); });
     document.getElementById('src-load-db-btn').addEventListener('click', loadSrcRdbmsDatabases);
-
-    document.getElementById('src-deleteInstanceBtn').addEventListener('click', function() {
-        if (!selectedSrcInstance) return;
-        deleteModalContext = 'src';
-        document.getElementById('delete-instance-name').textContent = selectedSrcInstance.instanceId;
-        document.getElementById('delete-modal-instruction').textContent = 'To delete this instance, enter its Name: ' + selectedSrcInstance.name;
-        deleteConfirmModal.show();
-    });
 
     const srcRegionSel = document.getElementById('sourceRegionSelect');
     if (srcRegionSel) {
@@ -1450,13 +1427,12 @@
     function onTgtRdbmsRowClick(row) {
         if (row.dataset.available !== '1') return;
         const d = row.dataset;
-        const deleteBtn = document.getElementById('tgt-deleteInstanceBtn');
         if (selectedTgtInstance && selectedTgtInstance.instanceId === d.instanceId) {
             selectedTgtInstance = null;
             row.classList.remove('table-active');
             document.getElementById('mysql-destHost').value = '';
             document.getElementById('mysql-destPort').value = '';
-            deleteBtn.disabled = true;
+            tgtDbiPanel.refreshButtons();
             return;
         }
         document.querySelectorAll('#tgt-rdbms-table-body tr.tgt-rdbms-row.table-active').forEach(r => r.classList.remove('table-active'));
@@ -1464,8 +1440,9 @@
         selectedTgtInstance = { instanceId: d.instanceId, name: d.name, endpoint: d.endpoint, port: d.port };
         document.getElementById('mysql-destHost').value = d.endpoint;
         document.getElementById('mysql-destPort').value = d.port;
-        deleteBtn.disabled = false;
         applyTargetProviderRules();
+        autoSelectContext('target', d.instanceId);
+        tgtDbiPanel.refreshButtons();
     }
 
     function loadTgtRdbmsTable() {
@@ -1475,7 +1452,6 @@
 
         const tbody = document.getElementById('tgt-rdbms-table-body');
         tbody.innerHTML = '<tr><td colspan="7" class="text-center py-3"><span class="spinner-border spinner-border-sm"></span></td></tr>';
-        document.getElementById('tgt-deleteInstanceBtn').disabled = true;
         selectedTgtInstance = null;
 
         fetch('/db/rdbms', {
@@ -1498,74 +1474,6 @@
 
     document.getElementById('tgt-rdbms-search').addEventListener('input', () => { tgtRdbmsPage = 1; renderTgtRdbmsTable(); });
 
-    document.getElementById('tgt-deleteInstanceBtn').addEventListener('click', function() {
-        if (!selectedTgtInstance) return;
-        deleteModalContext = 'tgt';
-        document.getElementById('delete-instance-name').textContent = selectedTgtInstance.instanceId;
-        document.getElementById('delete-modal-instruction').textContent = 'To delete this instance, enter its Name: ' + selectedTgtInstance.name;
-        deleteConfirmModal.show();
-    });
-
-    // ── Shared delete confirmation modal (source + target tables) ────
-    const deleteConfirmModal = new bootstrap.Modal(document.getElementById('deleteConfirmModal'));
-
-    document.getElementById('deleteConfirmModal').addEventListener('show.bs.modal', function () {
-        document.getElementById('delete-username-input').value = '';
-        document.getElementById('delete-username-error').classList.add('d-none');
-        document.getElementById('deleteConfirmBtn').disabled = true;
-    });
-
-    document.getElementById('delete-username-input').addEventListener('input', function () {
-        const inst = deleteModalContext === 'src' ? selectedSrcInstance : selectedTgtInstance;
-        if (!inst) return;
-        const expected = inst.name;
-        const match = this.value === expected;
-        const isEmpty = !this.value;
-        document.getElementById('delete-username-error').classList.toggle('d-none', isEmpty || match);
-        document.getElementById('deleteConfirmBtn').disabled = !match;
-    });
-
-    document.getElementById('deleteConfirmBtn').addEventListener('click', async function () {
-        const isSrc = deleteModalContext === 'src';
-        const inst = isSrc ? selectedSrcInstance : selectedTgtInstance;
-        if (!inst) return;
-        const btn = this;
-        btn.disabled = true;
-        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Deleting...';
-        const provider = document.getElementById(isSrc ? 'sourcePoint[provider]' : 'targetPoint[provider]')?.value || '';
-        const region = isSrc ? getSrcRegion() : getTgtRegion();
-        try {
-            const r = await fetch('/db/rdbms', {
-                method: 'DELETE',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ provider, region, instanceId: inst.instanceId })
-            });
-            const j = await r.json().catch(() => ({}));
-            if (!r.ok) throw new Error(j.error || 'Delete failed');
-            deleteConfirmModal.hide();
-            if (isSrc) {
-                document.querySelectorAll('#src-rdbms-table-body tr.src-rdbms-row.table-active').forEach(r => r.classList.remove('table-active'));
-                selectedSrcInstance = null;
-                document.getElementById('src-rdbms-connect-section').style.display = 'none';
-                document.getElementById('src-rdbms-db-section').style.display = 'none';
-                document.getElementById('src-deleteInstanceBtn').disabled = true;
-                loadSrcRdbmsTable();
-            } else {
-                document.querySelectorAll('#tgt-rdbms-table-body tr.tgt-rdbms-row.table-active').forEach(r => r.classList.remove('table-active'));
-                selectedTgtInstance = null;
-                document.getElementById('mysql-destHost').value = '';
-                document.getElementById('mysql-destPort').value = '';
-                document.getElementById('tgt-deleteInstanceBtn').disabled = true;
-                loadTgtRdbmsTable();
-            }
-        } catch (err) {
-            alert('삭제 실패: ' + err.message);
-        } finally {
-            btn.disabled = false;
-            btn.innerHTML = '<i class="bi bi-trash3 me-1"></i>Delete';
-        }
-    });
-
     const tgtRegionSel = document.getElementById('targetRegionSelect');
     if (tgtRegionSel) {
         tgtRegionSel.addEventListener('change', loadTgtRdbmsTable);
@@ -1578,6 +1486,94 @@
             renderTgtRdbmsTable();
             setTimeout(() => { loadTgtRdbmsTable(); applyTargetProviderRules(); }, 0);
         });
+    }
+
+    // provider hidden 변경(초기화 순서상 credential→provider가 비동기로 반영됨)에도
+    // 로드를 시도해 provider·region 선택 순서와 무관하게 목록이 조회되도록 보강
+    const tgtProviderHidden = document.getElementById('targetPoint[provider]');
+    if (tgtProviderHidden) {
+        tgtProviderHidden.addEventListener('change', () => setTimeout(loadTgtRdbmsTable, 0));
+    }
+    const srcProviderHidden = document.getElementById('sourcePoint[provider]');
+    if (srcProviderHidden) {
+        srcProviderHidden.addEventListener('change', () => setTimeout(loadSrcRdbmsTable, 0));
+    }
+
+    // ── 인스턴스 생성/삭제 + 샘플데이터 생성 (DBInstancePanel/SamplePanel 공용 컴포넌트) ──
+    // DBInstancePanel은 scripts.js(footer 로드)에 정의되므로 인라인 최상위에서 호출하면
+    // "DBInstancePanel is not defined"로 이후 코드 전체가 죽는다 → DOMContentLoaded에서 초기화.
+    let srcDbiPanel = null;
+    let tgtDbiPanel = null;
+    document.addEventListener('DOMContentLoaded', () => {
+    srcDbiPanel = DBInstancePanel.init({
+        kind: 'rdbms',
+        getProvider: () => document.getElementById('sourcePoint[provider]')?.value || '',
+        getRegion: getSrcRegion,
+        getCredLabel: () => {
+            const s = document.getElementById('sourceCredentialSelect');
+            return s?.selectedOptions?.[0]?.textContent?.trim();
+        },
+        createBtn: document.getElementById('src-rdbms-createBtn'),
+        deleteBtn: document.getElementById('src-rdbms-deleteBtn'),
+        // 인스턴스 선택 시 '+ Instance' → '+ Sample Data' 전환 (gen-mysql과 동일 UX)
+        sample: {},
+        getSelected: () => selectedSrcInstance,
+        onData: (instances) => {
+            srcRdbmsAllRows = instances || [];
+            // 삭제 완료 등으로 선택 인스턴스가 목록에서 사라지면 선택/접속정보 정리
+            if (selectedSrcInstance && !srcRdbmsAllRows.some(i => i.instanceId === selectedSrcInstance.instanceId)) {
+                selectedSrcInstance = null;
+                document.getElementById('src-rdbms-connect-section').style.display = 'none';
+                document.getElementById('src-rdbms-db-section').style.display = 'none';
+                srcDbiPanel.refreshButtons();
+            }
+            renderSrcRdbmsTable();
+        },
+    });
+    tgtDbiPanel = DBInstancePanel.init({
+        kind: 'rdbms',
+        getProvider: () => document.getElementById('targetPoint[provider]')?.value || '',
+        getRegion: getTgtRegion,
+        getCredLabel: () => {
+            const s = document.getElementById('targetCredentialSelect');
+            return s?.selectedOptions?.[0]?.textContent?.trim();
+        },
+        createBtn: document.getElementById('tgt-rdbms-createBtn'),
+        deleteBtn: document.getElementById('tgt-rdbms-deleteBtn'),
+        // 인스턴스 선택 시 '+ Instance' → '+ Sample Data' 전환 (gen-mysql과 동일 UX)
+        sample: {},
+        getSelected: () => selectedTgtInstance,
+        onData: (instances) => {
+            tgtRdbmsAllRows = instances || [];
+            if (selectedTgtInstance && !tgtRdbmsAllRows.some(i => i.instanceId === selectedTgtInstance.instanceId)) {
+                selectedTgtInstance = null;
+                document.getElementById('mysql-destHost').value = '';
+                document.getElementById('mysql-destPort').value = '';
+                tgtDbiPanel.refreshButtons();
+            }
+            renderTgtRdbmsTable();
+        },
+    });
+    // 컨텍스트(credential/region) 변경 시 버튼 상태 갱신 — 기존 리스너와 별개로 추가 등록
+    ['sourceRegionSelect', 'sourceCredentialSelect'].forEach(id =>
+        document.getElementById(id)?.addEventListener('change', () => setTimeout(() => srcDbiPanel.refreshButtons(), 0)));
+    srcProviderHidden?.addEventListener('change', () => setTimeout(() => srcDbiPanel.refreshButtons(), 0));
+    ['targetRegionSelect', 'targetCredentialSelect'].forEach(id =>
+        document.getElementById(id)?.addEventListener('change', () => setTimeout(() => tgtDbiPanel.refreshButtons(), 0)));
+    tgtProviderHidden?.addEventListener('change', () => setTimeout(() => tgtDbiPanel.refreshButtons(), 0));
+    }); // DOMContentLoaded (DBInstancePanel/SamplePanel 초기화)
+
+    // 행 선택 시 Region 셀렉트를 인스턴스의 region과 대소문자 무시로 동기화 (auto-select).
+    // change는 dispatch하지 않는다 — 목록 리로드로 방금 한 선택이 풀리는 것을 방지.
+    // provider는 목록 조회에 사용한 값 그대로라 항상 일치.
+    function autoSelectContext(point, instanceId) {
+        const rows = point === 'source' ? srcRdbmsAllRows : tgtRdbmsAllRows;
+        const inst = rows.find(i => i.instanceId === instanceId);
+        if (!inst || !inst.region) return;
+        const sel = document.getElementById(point === 'source' ? 'sourceRegionSelect' : 'targetRegionSelect');
+        if (!sel) return;
+        const opt = [...sel.options].find(o => (o.value || '').toLowerCase() === String(inst.region).toLowerCase());
+        if (opt && sel.value !== opt.value) sel.value = opt.value;
     }
 
     function setGrade(grade) {
