@@ -2,6 +2,7 @@ package alibaba
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -246,6 +247,10 @@ func (p *AlibabaProvider) DeleteInstance(ctx context.Context, instanceID string)
 		ReleasedKeepPolicy: tea.String("None"),
 	})
 	if err != nil {
+		var sdkErr *tea.SDKError
+		if errors.As(err, &sdkErr) && sdkErr.StatusCode != nil && *sdkErr.StatusCode == 404 {
+			return models.DBInstance{Provider: "alibaba", InstanceID: instanceID, Status: "deleted", Region: p.region}, nil
+		}
 		return models.DBInstance{}, fmt.Errorf("failed to delete Alibaba RDS instance: %w", err)
 	}
 	return models.DBInstance{

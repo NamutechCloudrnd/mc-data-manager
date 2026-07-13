@@ -1,6 +1,3 @@
-// Package rdbinstance orchestrates RDB (database) instance operations across
-// CSPs: it resolves credentials by provider and dispatches to the matching
-// provider implementation.
 package rdbinstance
 
 import (
@@ -17,7 +14,10 @@ import (
 	awsprovider "github.com/cloud-barista/mc-data-manager/pkg/rdbinstance/aws"
 	gcpprovider "github.com/cloud-barista/mc-data-manager/pkg/rdbinstance/gcp"
 	ncpprovider "github.com/cloud-barista/mc-data-manager/pkg/rdbinstance/ncp"
+	"github.com/cloud-barista/mc-data-manager/pkg/utils"
 	"github.com/cloud-barista/mc-data-manager/repository"
+
+	"github.com/rs/zerolog/log"
 )
 
 // repo returns the namespace-scoped RDB instance repository, backed by the
@@ -63,8 +63,17 @@ func providerFor(provider string, creds interface{}, region string) (rdbinstance
 	}
 }
 
-// ListInstances resolves credentials for the provider and returns its instances.
 func ListInstances(ctx context.Context, provider, region string) ([]models.DBInstance, error) {
+	nsId := utils.GetNsId()
+
+	records, err := repo().FindByNamespace(provider, region, nsId)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load RDB instance records: %w", err)
+	}
+	if len(records) == 0 {
+		return []models.DBInstance{}, nil
+	}
+
 	creds, err := config.NewAuthManager().LoadCredentialsByProvider(ctx, provider)
 	if err != nil {
 		return nil, fmt.Errorf("credential load failed: %w", err)
@@ -75,7 +84,41 @@ func ListInstances(ctx context.Context, provider, region string) ([]models.DBIns
 		return nil, err
 	}
 
-	return p.ListInstances(ctx)
+	cspInstances, err := p.ListInstances(ctx)
+	if err != nil {
+		return nil, err
+	}
+	cspByID := make(map[string]models.DBInstance, len(cspInstances))
+	for _, inst := range cspInstances {
+		cspByID[inst.InstanceID] = inst
+	}
+
+	// tbRdbInstance와 싱크
+	exists := []models.DBInstance{}
+	var orphanIDs []string
+	for _, record := range records {
+		inst, ok := cspByID[record.InstanceID]
+		if !ok {
+			orphanIDs = append(orphanIDs, record.InstanceID)
+			continue
+		}
+		if record.PublicNetPending {
+			inst.Status = "creating"
+		}
+		// 사용자가 생상한 이름으로 교체
+		inst.Name = record.InstanceName
+		exists = append(exists, inst)
+	}
+
+	// csp에 없는 인스턴스 tbRdbInstance에서 삭제
+	if len(orphanIDs) > 0 {
+		if err := repo().DeleteRDBInstanceByID(provider, region, orphanIDs); err != nil {
+			log.Error().Err(err).Str("provider", provider).Str("region", region).
+				Msg("failed to remove orphaned RDB instance records")
+		}
+	}
+
+	return exists, nil
 }
 
 // CreateInstance resolves credentials for the provider and provisions an instance.
@@ -105,7 +148,17 @@ func DeleteInstance(ctx context.Context, provider, region, instanceID string) (m
 		return models.DBInstance{}, err
 	}
 
-	return p.DeleteInstance(ctx, instanceID)
+	instance, err := p.DeleteInstance(ctx, instanceID)
+	if err != nil {
+		return models.DBInstance{}, err
+	}
+
+	if err := repo().DeleteRDBInstanceByID(provider, region, []string{instanceID}); err != nil {
+		log.Error().Err(err).Str("provider", provider).Str("region", region).Str("instanceId", instanceID).
+			Msg("failed to remove RDB instance record after CSP delete")
+	}
+
+	return instance, nil
 }
 
 // ListEngineVersions returns available DB engine versions for the provider.

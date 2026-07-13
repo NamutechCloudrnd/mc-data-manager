@@ -43,7 +43,7 @@ func (r *RDBInstanceRepository) CreateRDBInstance(record *models.RDBInstanceReco
 	return r.db.Create(record).Error
 }
 
-func (r *RDBInstanceRepository) DeleteRDBInstanceByID(provider, region, instanceID string) error {
-	return r.db.Where("provider = ? AND region = ? AND instance_id = ?", provider, region, instanceID).
+func (r *RDBInstanceRepository) DeleteRDBInstanceByID(provider, region string, instanceIDs []string) error {
+	return r.db.Where("provider = ? AND region = ? AND instance_id IN ?", provider, region, instanceIDs).
 		Delete(&models.RDBInstanceRecord{}).Error
 }

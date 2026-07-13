@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/NaverCloudPlatform/ncloud-sdk-go-v2/ncloud"
 	vmysql "github.com/NaverCloudPlatform/ncloud-sdk-go-v2/services/vmysql"
@@ -69,6 +70,9 @@ func (p *NCPProvider) DeleteInstance(_ context.Context, instanceID string) (mode
 		CloudMysqlInstanceNo: ncloud.String(instanceID),
 	})
 	if err != nil {
+		if strings.Contains(err.Error(), "5001017") {
+			return models.DBInstance{Provider: "ncp", InstanceID: instanceID, Status: "deleted", Region: p.region}, nil
+		}
 		return models.DBInstance{}, fmt.Errorf("failed to delete NCP Cloud MySQL instance: %w", err)
 	}
 

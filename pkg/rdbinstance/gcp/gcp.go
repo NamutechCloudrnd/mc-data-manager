@@ -11,13 +11,16 @@ package gcp
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"sort"
 	"strings"
 
 	"github.com/cloud-barista/mc-data-manager/config"
 	"github.com/cloud-barista/mc-data-manager/models"
 	"github.com/cloud-barista/mc-data-manager/pkg/rdbinstance"
+	"google.golang.org/api/googleapi"
 	sqladmin "google.golang.org/api/sqladmin/v1"
 )
 
@@ -155,6 +158,10 @@ func (p *GCPProvider) ListInstances(ctx context.Context) ([]models.DBInstance, e
 func (p *GCPProvider) DeleteInstance(ctx context.Context, instanceID string) (models.DBInstance, error) {
 	op, err := p.svc.Instances.Delete(p.project, instanceID).Context(ctx).Do()
 	if err != nil {
+		var gerr *googleapi.Error
+		if errors.As(err, &gerr) && (gerr.Code == http.StatusNotFound || gerr.Code == http.StatusForbidden) {
+			return models.DBInstance{Provider: "gcp", InstanceID: instanceID, Status: "deleted", Region: p.region}, nil
+		}
 		return models.DBInstance{}, fmt.Errorf("failed to delete Cloud SQL instance: %w", err)
 	}
 	return models.DBInstance{
