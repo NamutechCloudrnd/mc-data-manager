@@ -24,6 +24,7 @@ import (
 
 type NRDBMS interface {
 	ListTables() ([]string, error)
+	ListDatabases() ([]string, error)
 	CreateTable(tableName string) error
 	DeleteTables(tableName string) error
 	ImportTable(tableName string, srcData *[]map[string]interface{}) error
@@ -62,6 +63,15 @@ func (nrdbc *NRDBController) ListTables() ([]string, error) {
 		return tableList, err
 	}
 	return tableList, nil
+}
+
+// list database
+func (nrdbc *NRDBController) ListDatabases() ([]string, error) {
+	dbList, err := nrdbc.client.ListDatabases()
+	if err != nil {
+		return dbList, err
+	}
+	return dbList, nil
 }
 
 // create table

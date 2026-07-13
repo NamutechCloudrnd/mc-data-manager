@@ -56,6 +56,22 @@ func (n *NCPMongoDBMS) ListTables() ([]string, error) {
 	return n.db.ListCollectionNames(n.ctx, bson.D{})
 }
 
+// list database
+func (n *NCPMongoDBMS) ListDatabases() ([]string, error) {
+	names, err := n.client.ListDatabaseNames(n.ctx, bson.D{})
+	if err != nil {
+		return names, err
+	}
+
+	dbList := []string{}
+	for _, name := range names {
+		if name != "admin" && name != "config" && name != "local" {
+			dbList = append(dbList, name)
+		}
+	}
+	return dbList, nil
+}
+
 // delete table
 func (n *NCPMongoDBMS) DeleteTables(tableName string) error {
 	return n.client.Database(n.dbName).Collection(tableName).Drop(n.ctx)

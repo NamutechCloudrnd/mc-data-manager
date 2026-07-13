@@ -65,6 +65,12 @@ func (f *FirestoreDBMS) ListTables() ([]string, error) {
 	return tableList, nil
 }
 
+// Firestore has a single database per connection (selected via
+// DatabaseID at connection time), so this returns an empty list.
+func (f *FirestoreDBMS) ListDatabases() ([]string, error) {
+	return []string{}, nil
+}
+
 // delete table
 func (f *FirestoreDBMS) DeleteTables(tableName string) error {
 	iter := f.client.Collection(tableName).Documents(f.ctx)

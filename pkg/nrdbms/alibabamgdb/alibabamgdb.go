@@ -56,6 +56,22 @@ func (a *AlibabaMongoDBMS) ListTables() ([]string, error) {
 	return a.db.ListCollectionNames(a.ctx, bson.D{})
 }
 
+// list database
+func (a *AlibabaMongoDBMS) ListDatabases() ([]string, error) {
+	names, err := a.client.ListDatabaseNames(a.ctx, bson.D{})
+	if err != nil {
+		return names, err
+	}
+
+	dbList := []string{}
+	for _, name := range names {
+		if name != "admin" && name != "config" && name != "local" {
+			dbList = append(dbList, name)
+		}
+	}
+	return dbList, nil
+}
+
 // delete table
 func (a *AlibabaMongoDBMS) DeleteTables(tableName string) error {
 	return a.client.Database(a.dbName).Collection(tableName).Drop(a.ctx)
