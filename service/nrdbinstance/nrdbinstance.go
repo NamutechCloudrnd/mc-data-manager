@@ -5,6 +5,8 @@ package nrdbinstance
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -25,6 +27,15 @@ import (
 // shared config.DB connection (set up by config.InitDB() at server startup).
 func repo() *repository.NRDBInstanceRepository {
 	return repository.NewNRDBInstanceRepository(config.DB)
+}
+
+// randomSuffix returns n lowercase hex characters, used to make csp_instance_name
+// unique across namespaces without eating into CSP name-length limits the way a
+// full timestamp would.
+func randomSuffix(n int) string {
+	b := make([]byte, (n+1)/2)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)[:n]
 }
 
 func providerFor(provider string, creds interface{}, region string) (nrdbinstance.Provider, error) {
@@ -113,8 +124,15 @@ func ListInstances(ctx context.Context, provider, region string) ([]models.NRDBI
 	return exists, nil
 }
 
-// CreateInstance resolves credentials for the provider and provisions an NRDB instance.
 func CreateInstance(ctx context.Context, provider, region string, spec nrdbinstance.CreateSpec) (models.NRDBInstance, error) {
+	nsId := utils.GetNsId()
+	instanceName := spec.InstanceID
+
+	// namespace별 instance_name(사용자 지정) 중복 가능
+	if err := repo().CheckDuplicate(provider, region, nsId, instanceName); err != nil {
+		return models.NRDBInstance{}, err
+	}
+
 	creds, err := config.NewAuthManager().LoadCredentialsByProvider(ctx, provider)
 	if err != nil {
 		return models.NRDBInstance{}, fmt.Errorf("credential load failed: %w", err)
@@ -125,7 +143,29 @@ func CreateInstance(ctx context.Context, provider, region string, spec nrdbinsta
 		return models.NRDBInstance{}, err
 	}
 
-	return p.CreateInstance(ctx, spec)
+	// 실제 csp에 생성되는 instance명
+	cspInstanceName := fmt.Sprintf("%s-%s", instanceName, randomSuffix(6))
+	spec.InstanceID = cspInstanceName
+
+	instance, err := p.CreateInstance(ctx, spec)
+	if err != nil {
+		return models.NRDBInstance{}, err
+	}
+
+	record := &models.NRDBInstanceRecord{
+		Provider:        provider,
+		Region:          region,
+		InstanceID:      instance.InstanceID,
+		InstanceName:    instanceName,
+		CspInstanceName: cspInstanceName,
+		NamespaceID:     nsId,
+	}
+	if err := repo().CreateNRDBInstance(record); err != nil {
+		return models.NRDBInstance{}, fmt.Errorf("CSP instance created but failed to save record: %w", err)
+	}
+
+	instance.Name = instanceName
+	return instance, nil
 }
 
 // ListEngineVersions returns available engine versions for the provider.
