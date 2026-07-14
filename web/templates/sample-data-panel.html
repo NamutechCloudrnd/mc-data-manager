@@ -55,17 +55,12 @@
             </div>
         </div>
 
-        <!-- Database 선택: NoSQL MongoDB 전용 — 계정 입력 후 Load Databases로 목록 조회 → 선택 -->
+        <!-- Database: NoSQL MongoDB 전용 — 생성할 Database 이름 직접 입력 (insert 시 자동 생성) -->
         <div class="d-none" id="nsp-db-group">
-            <div class="d-flex justify-content-end mb-2">
-                <button type="button" class="btn btn-secondary btn-sm" id="nsp-load-db-btn">Load Databases</button>
-            </div>
             <div class="input-group mb-3">
                 <span class="input-group-text rounded-start"><i class="bi bi-database-fill"></i></span>
                 <div class="form-floating">
-                    <select class="form-select rounded-end" id="nsp-database">
-                        <option value="">- Select Database -</option>
-                    </select>
+                    <input type="text" class="form-control rounded-end" id="nsp-database" placeholder="Database Name" autocomplete="off">
                     <label for="nsp-database">Database Name</label>
                 </div>
             </div>

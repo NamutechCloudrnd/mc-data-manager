@@ -551,6 +551,7 @@ const source = {
             // 인스턴스 선택 시 '+ Instance' → '+ Sample Data' 전환 (gen-mysql과 동일 UX)
             sample: {},
             getSelected: () => selectedSrcInstance,
+            getRows: () => srcRdbmsAllRows,
             onData: (instances) => {
                 srcRdbmsAllRows = instances || [];
                 if (selectedSrcInstance && !srcRdbmsAllRows.some(i => i.instanceId === selectedSrcInstance.instanceId)) {
@@ -571,6 +572,7 @@ const source = {
             // AWS(서버리스)는 목록/버튼이 숨겨지므로 안내 배너의 전용 버튼으로 진입
             sample: { awsBtn: document.getElementById('bak-nrdb-aws-sampleBtn') },
             getSelected: () => selectedNrdbInstance,
+            getRows: () => nrdbAllRows,
             onData: (instances) => {
                 nrdbAllRows = instances || [];
                 if (selectedNrdbInstance && !nrdbAllRows.some(i => i.instanceId === selectedNrdbInstance.instanceId)) {

@@ -133,17 +133,19 @@
     <input type="hidden" id="genTarget" value="objectstorage">
     <input type="hidden" id="targetPoint[provider]" value="none">
     <input type="hidden" id="targetPoint[endpoint]" name="targetPoint[endpoint]" value="">
-    <!-- Target Bucket: 행 클릭 시 채워지고, 새 이름을 직접 입력하면 Submit 시 함께 생성됨.
+    <!-- Target Bucket: 행 클릭 또는 셀렉트로 기존 버킷만 선택 (새 버킷은 + Bucket으로 생성).
          scripts.js generateFormSubmit이 #newBucket 값을 참조. 로드 시 gen-data 카드 상단으로 이동됨 -->
     <div class="mb-3" id="targetBucketArea">
         <div class="input-group">
             <span class="input-group-text rounded-start"><i class="bi bi-bucket"></i></span>
             <div class="form-floating">
-                <input type="text" class="form-control rounded-end" id="newBucket" name="targetPoint[bucket]" placeholder="Target Bucket" autocomplete="off">
+                <select class="form-select rounded-end" id="newBucket" name="targetPoint[bucket]">
+                    <option value="">- Select Bucket -</option>
+                </select>
                 <label for="newBucket">Target Bucket</label>
             </div>
         </div>
-        <div class="text-muted small ps-2 mt-1">Click a bucket in the list to select it, or type a new name to create it on submit.</div>
+        <div class="text-muted small ps-2 mt-1">Click a bucket in the list or choose one from the dropdown. Use + Bucket to create a new one.</div>
     </div>
 
     <!-- ── Offcanvas: 버킷 생성 / 오브젝트 목록 ──────────── -->
@@ -436,8 +438,17 @@ document.addEventListener('DOMContentLoaded', function () {
         </tr>`;
     }
 
+    // Target Bucket 셀렉트 옵션을 로드된 버킷 목록으로 구성 (현재 선택 유지)
+    function populateBucketSelect() {
+        const cur = targetBucketInput.value;
+        targetBucketInput.replaceChildren(new Option('- Select Bucket -', ''));
+        [...new Set(allBuckets.map(b => b.name))].forEach(n => targetBucketInput.add(new Option(n, n)));
+        targetBucketInput.value = cur && allBuckets.some(b => b.name === cur) ? cur : '';
+    }
+
     function renderBuckets(buckets) {
         allBuckets = buckets || [];
+        populateBucketSelect();
         bucketPage = 1;
         applyBucketFilter();
     }
@@ -507,6 +518,7 @@ document.addEventListener('DOMContentLoaded', function () {
         const provider = getProvider();
         if (!provider || provider === 'none') {
             allBuckets = [];
+            populateBucketSelect();
             clearTarget();
             document.getElementById('bucket-table-body').innerHTML =
                 '<tr><td colspan="6" class="text-center text-muted small py-3">Select a credential to list buckets</td></tr>';
@@ -575,6 +587,8 @@ document.addEventListener('DOMContentLoaded', function () {
         sectionObjects.classList.add('d-none');
         ocCreateBtn.classList.remove('d-none');
         bucketNameInput.value = '';
+        bucketNameInput.classList.remove('is-invalid');
+        bucketNameInput.closest('.form-floating').classList.remove('is-invalid');
         document.getElementById('bucket-name-feedback').classList.add('d-none');
         ocCreateBtn.disabled = true;
         updateOcContext();
@@ -606,7 +620,12 @@ document.addEventListener('DOMContentLoaded', function () {
     bucketNameInput.addEventListener('input', function () {
         const name = this.value.trim();
         const fb = document.getElementById('bucket-name-feedback');
-        const msg = bucketNameError(name);
+        let msg = bucketNameError(name);
+        if (!msg && name && allBuckets.some(b => b.name === name)) {
+            msg = 'This bucket name already exists.';
+        }
+        this.classList.toggle('is-invalid', !!msg);
+        this.closest('.form-floating').classList.toggle('is-invalid', !!msg);
         fb.textContent = msg;
         fb.classList.toggle('d-none', !msg);
         ocCreateBtn.disabled = !name || !!msg;
@@ -629,10 +648,13 @@ document.addEventListener('DOMContentLoaded', function () {
                 alert(`Bucket '${name}' already exists.`);
             }
             offcanvas.hide();
-            // 방금 만든 버킷을 바로 생성 대상으로 지정
+            // 방금 만든 버킷을 바로 생성 대상으로 지정 (셀렉트 옵션 갱신 후 선택)
+            await loadBuckets();
             targetBucketInput.value = name;
+            selectedBucketRegion = regionSelect.value || null;
             updateSubmitBtn();
-            loadBuckets();
+            updateToolbarBtn();
+            syncRowHighlight();
         } catch (err) {
             alert('Failed to create bucket: ' + err.message);
         } finally {
@@ -869,8 +891,18 @@ document.addEventListener('DOMContentLoaded', function () {
 
     openCreateBtn.addEventListener('click', enterCreateMode);
 
-    // Target Bucket 직접 입력: Submit 활성화 + 목록 하이라이트 + + Bucket 버튼 동기화
-    targetBucketInput.addEventListener('input', () => {
+    // Target Bucket 셀렉트 선택: 행 클릭과 동일하게 리전 동기화 + 버튼/하이라이트 갱신
+    targetBucketInput.addEventListener('change', () => {
+        const b = allBuckets.find(x => x.name === targetBucketInput.value);
+        selectedBucketRegion = null;
+        if (b) {
+            const region = bucketRegion(b);
+            const connRegion = (b.connectionName || '').replace(`${getProvider()}-`, '');
+            const matched = matchRegionOption(regionSelect, region, connRegion);
+            selectedBucketRegion = matched || region || regionSelect.value;
+            if (matched && regionSelect.value !== matched) regionSelect.value = matched;
+            updateOcContext();
+        }
         updateSubmitBtn();
         updateToolbarBtn();
         syncRowHighlight();

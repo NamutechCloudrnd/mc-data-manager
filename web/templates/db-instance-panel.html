@@ -33,14 +33,24 @@
                 <label for="dbi-engineVersion">Engine Version</label>
             </div>
         </div>
+        <!-- Instance Class: gen-mysql/gen-no-sql과 동일한 2패널(family/size) 드롭다운 -->
         <div class="input-group mb-3" id="dbi-class-group">
             <span class="input-group-text rounded-start"><i class="bi bi-collection-fill"></i></span>
-            <div class="form-floating">
-                <select class="form-select rounded-end" id="dbi-instanceClass">
-                    <option value="">-</option>
-                </select>
-                <label for="dbi-instanceClass">Instance Class</label>
+            <div class="form-floating flex-grow-1 position-relative" id="dbi-icWrapper">
+                <div class="form-select rounded-end d-flex align-items-center" id="dbi-icTrigger" role="combobox" tabindex="0"
+                     style="height:58px; cursor:pointer; user-select:none;">
+                    <span id="dbi-icTriggerText" class="text-muted">-</span>
+                </div>
+                <label>Instance Class</label>
+                <div class="border rounded-2 shadow-sm bg-white position-absolute d-none" id="dbi-icPanel"
+                     style="top:calc(100% + 2px); left:0; z-index:1060; min-width:100%;">
+                    <div class="d-flex" style="max-height:200px;">
+                        <div id="dbi-icFamilyList" class="border-end" style="min-width:130px; width:45%; overflow-y:auto;"></div>
+                        <div id="dbi-icSizeList" style="flex:1; overflow-y:auto;"></div>
+                    </div>
+                </div>
             </div>
+            <input type="hidden" id="dbi-instanceClass">
         </div>
 
         <div class="input-group mb-3">
@@ -49,6 +59,7 @@
                 <input type="text" class="form-control rounded-end" id="dbi-instanceId" autocomplete="off" placeholder="Instance ID">
                 <label for="dbi-instanceId">Instance ID</label>
             </div>
+            <div class="invalid-feedback ps-2">This instance ID already exists.</div>
         </div>
         <div class="input-group mb-3" id="dbi-storage-group">
             <span class="input-group-text rounded-start"><i class="bi bi-archive-fill"></i></span>
@@ -56,9 +67,10 @@
                 <input type="number" class="form-control rounded-end" id="dbi-storage" autocomplete="off" min="20" value="20" placeholder="20">
                 <label for="dbi-storage">Allocated Storage (GB)</label>
             </div>
+            <div class="invalid-feedback ps-2" id="dbi-storage-error">Please enter 20 GB or more.</div>
         </div>
-        <div id="dbi-storage-error" class="text-danger small ps-2 d-none mb-2"></div>
-        <div class="input-group mb-1" id="dbi-username-group">
+        <!-- margin은 provider별로 openCreate가 토글: 헬퍼 문구 있는 provider=mb-1, 그 외=mb-3 -->
+        <div class="input-group mb-3" id="dbi-username-group">
             <span class="input-group-text rounded-start"><i class="bi bi-person-fill"></i></span>
             <div class="form-floating">
                 <input type="text" class="form-control rounded-end" id="dbi-username" autocomplete="username" placeholder="Username">
@@ -76,10 +88,24 @@
         </div>
         <div id="dbi-password-error" class="text-danger small ps-2 d-none mb-2"></div>
     </div>
-    <div class="offcanvas-footer p-3 border-top">
+    <div class="offcanvas-footer p-3 border-top d-flex flex-column gap-2">
         <button type="button" class="btn btn-primary w-100" id="dbi-createBtn" disabled>Create</button>
     </div>
 </div>
+
+<style>
+/* gen-mysql/gen-no-sql의 Instance Class 2패널 드롭다운과 동일 스타일 */
+.ic-family-item:hover  { background: #f0f0f0; cursor: pointer; }
+.ic-family-item.active { background: #0d6efd; color: #fff; }
+.ic-size-item:hover    { background: #f8f9fa; cursor: pointer; }
+.offcanvas-footer { flex-shrink: 0; }
+#dbi-icTriggerText {
+    width: 100%;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+</style>
 
 <!-- 인스턴스 삭제 확인 (이름 타이핑) -->
 <div class="modal fade" id="dbiDeleteModal" tabindex="-1" aria-hidden="true">

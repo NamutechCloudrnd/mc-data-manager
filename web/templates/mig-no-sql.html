@@ -652,6 +652,7 @@ document.addEventListener('DOMContentLoaded', function () {
             // AWS(서버리스)는 목록/버튼이 숨겨지므로 안내 배너의 전용 버튼으로 진입
             sample: { awsBtn: document.getElementById(cfg.awsSampleBtnId) },
             getSelected: selected,
+            getRows: () => allRows,
             onData: (instances) => {
                 allRows = instances || [];
                 // 삭제 완료 등으로 선택 인스턴스가 목록에서 사라지면 선택/접속정보 정리
