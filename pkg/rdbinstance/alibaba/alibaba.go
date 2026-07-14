@@ -44,9 +44,6 @@ func New(accessKey, secretKey, region string) (rdbinstance.Provider, error) {
 	return &AlibabaProvider{client: client, vpcClient: vpcClient, region: region} , nil
 }
 
-// buildCreateRequest maps a CSP-agnostic CreateSpec to an Alibaba
-// CreateDBInstanceRequest. Network type, pay type and the security IP list are
-// fixed here (not taken from the request body).
 func buildCreateRequest(spec rdbinstance.CreateSpec, region string, vsw alibabacommon.VSwitchInfo) *alibabards.CreateDBInstanceRequest {
 	return &alibabards.CreateDBInstanceRequest{
 		Engine:                tea.String(spec.Engine),
@@ -65,10 +62,6 @@ func buildCreateRequest(spec rdbinstance.CreateSpec, region string, vsw alibabac
 	}
 }
 
-// toCreatedDBInstance converts the CreateDBInstance response into the CSP-agnostic
-// model. Create-specific: the response lacks status/engine/version, so status is
-// fixed to "Creating" and engine/version/class are taken from the spec. List uses
-// a separate converter that reads the real DBInstanceStatus.
 func toCreatedDBInstance(spec rdbinstance.CreateSpec, body *alibabards.CreateDBInstanceResponseBody, region string) models.DBInstance {
 	return models.DBInstance{
 		Provider:      "alibaba",
@@ -84,8 +77,6 @@ func toCreatedDBInstance(spec rdbinstance.CreateSpec, body *alibabards.CreateDBI
 	}
 }
 
-// CreateInstance provisions a new RDS instance, then launches the background
-// account + public-endpoint provisioning. Returns the instance in "Creating" state.
 func (p *AlibabaProvider) CreateInstance(ctx context.Context, spec rdbinstance.CreateSpec) (models.DBInstance, error) {
 	vsw, err := alibabacommon.ResolveVSwitch(p.vpcClient, p.region)
 	if err != nil {
@@ -169,8 +160,6 @@ func pickEndpoint(netInfos []*alibabards.DescribeDBInstanceNetInfoResponseBodyDB
 	return "-", 0
 }
 
-// toListedDBInstance converts a DescribeDBInstances item into the CSP-agnostic
-// model, applying status normalization and keeping the engine name as-is.
 func toListedDBInstance(item *alibabards.DescribeDBInstancesResponseBodyItemsDBInstance, endpoint string, port int32, region string) models.DBInstance {
 	name := tea.StringValue(item.DBInstanceDescription)
 	if name == "" {
@@ -196,10 +185,10 @@ func (p *AlibabaProvider) instanceEndpoint(instanceID string) (string, int32, er
 		DBInstanceId: tea.String(instanceID),
 	})
 	if err != nil {
-		return "", 0, err
+		return "-", 0, err
 	}
 	if resp == nil || resp.Body == nil || resp.Body.DBInstanceNetInfos == nil {
-		return "", 0, nil
+		return "-", 0, nil
 	}
 	ep, port := pickEndpoint(resp.Body.DBInstanceNetInfos.DBInstanceNetInfo)
 	return ep, port, nil

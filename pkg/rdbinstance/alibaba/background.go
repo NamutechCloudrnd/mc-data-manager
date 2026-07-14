@@ -6,19 +6,22 @@ import (
 
 	alibabards "github.com/alibabacloud-go/rds-20140815/v8/client"
 	"github.com/alibabacloud-go/tea/tea"
+	"github.com/cloud-barista/mc-data-manager/config"
+	"github.com/cloud-barista/mc-data-manager/repository"
 	"github.com/rs/zerolog/log"
 )
 
 const (
 	alibabaPollInterval = 5 * time.Second
-	alibabaPollTimeout = 10 * time.Minute
+	alibabaPollTimeout = 20 * time.Minute
 	alibabaPublicPort = "3306"
 	statusRunning     = "Running"
 )
 
-// provisionInBackground waits for the instance to become Running, then creates
-// the master account and allocates a public endpoint. Best-effort: progress and
-// failures are logged; nothing is returned to the caller.
+// provisionInBackground waits for the instance to become Running, allocates the
+// public endpoint, then creates the master account. Best-effort: neither step
+// blocks the other — a public endpoint failure/timeout leaves public_net_pending
+// true but still proceeds to try account creation, and vice versa.
 func (p *AlibabaProvider) provisionInBackground(instanceID, masterUsername, masterPassword string) {
 	logger := log.With().Str("provider", "alibaba").Str("instanceId", instanceID).Logger()
 
@@ -26,21 +29,34 @@ func (p *AlibabaProvider) provisionInBackground(instanceID, masterUsername, mast
 		return
 	}
 
-	if err := p.createAccount(instanceID, masterUsername, masterPassword); err != nil {
-		logger.Error().Err(err).Msg("alibaba CreateAccount failed")
-		return
+	// 퍼블릭 도메인 생성
+	if err := p.allocatePublicConnection(instanceID); err != nil {
+		logger.Error().Err(err).Msgf("alibaba public endpoint allocation failed: %v", err)
+	} else if p.waitForPublicEndpoint(instanceID) {
+		logger.Info().Msg("alibaba public endpoint allocated")
+	} else {
+		logger.Error().Msg("alibaba public endpoint never became ready")
 	}
-	logger.Info().Msg("alibaba account created")
+
+	if err := repository.NewRDBInstanceRepository(config.DB).
+		UpdatePublicNetPending("alibaba", p.region, instanceID, false); err != nil {
+		logger.Error().Err(err).Msg("failed to clear public_net_pending")
+	}
 
 	if !p.waitForRunning(instanceID) {
 		return
 	}
 
-	if err := p.allocatePublicConnection(instanceID); err != nil {
-		logger.Error().Err(err).Msg("alibaba AllocateInstancePublicConnection failed")
+	// 계정 생성
+	if err := p.createAccount(instanceID, masterUsername, masterPassword); err != nil {
+		logger.Error().Err(err).Msg("alibaba CreateAccount failed")
+		if err := repository.NewRDBInstanceRepository(config.DB).
+			UpdateAccountCreateFailed("alibaba", p.region, instanceID, true); err != nil {
+			logger.Error().Err(err).Msg("failed to flag account_create_failed")
+		}
 		return
 	}
-	logger.Info().Msg("alibaba public endpoint allocated; provisioning complete")
+	logger.Info().Msg("alibaba account created; provisioning complete")
 }
 
 // waitForRunning polls the instance status until Running or the timeout elapses.
@@ -61,6 +77,30 @@ func (p *AlibabaProvider) waitForRunning(instanceID string) bool {
 
 		if time.Now().After(deadline) {
 			log.Error().Str("instanceId", instanceID).Msg("alibaba timed out waiting for Running")
+			return false
+		}
+	}
+}
+
+// waitForPublicEndpoint polls the instance's network info until the public
+// endpoint's connection string is populated, or the timeout elapses.
+func (p *AlibabaProvider) waitForPublicEndpoint(instanceID string) bool {
+	deadline := time.Now().Add(alibabaPollTimeout)
+	for {
+		time.Sleep(alibabaPollInterval)
+
+		endpoint, _, err := p.instanceEndpoint(instanceID)
+		if err != nil {
+			log.Warn().Err(err).Str("instanceId", instanceID).Msg("alibaba public endpoint poll failed")
+		} else if endpoint != "-" {
+			log.Info().Str("instanceId", instanceID).Str("endpoint", endpoint).Msg("alibaba public endpoint ready")
+			return true
+		} else {
+			log.Info().Str("instanceId", instanceID).Msg("alibaba waiting for public endpoint")
+		}
+
+		if time.Now().After(deadline) {
+			log.Error().Str("instanceId", instanceID).Msg("alibaba timed out waiting for public endpoint")
 			return false
 		}
 	}

@@ -47,3 +47,15 @@ func (r *RDBInstanceRepository) DeleteRDBInstanceByID(provider, region string, i
 	return r.db.Where("provider = ? AND region = ? AND instance_id IN ?", provider, region, instanceIDs).
 		Delete(&models.RDBInstanceRecord{}).Error
 }
+
+func (r *RDBInstanceRepository) UpdatePublicNetPending(provider, region, instanceID string, pending bool) error {
+	return r.db.Model(&models.RDBInstanceRecord{}).
+		Where("provider = ? AND region = ? AND instance_id = ?", provider, region, instanceID).
+		Update("public_net_pending", pending).Error
+}
+
+func (r *RDBInstanceRepository) UpdateAccountCreateFailed(provider, region, instanceID string, failed bool) error {
+	return r.db.Model(&models.RDBInstanceRecord{}).
+		Where("provider = ? AND region = ? AND instance_id = ?", provider, region, instanceID).
+		Update("account_create_failed", failed).Error
+}

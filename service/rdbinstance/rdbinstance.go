@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"encoding/json"
 
@@ -66,6 +67,7 @@ func providerFor(provider string, creds interface{}, region string) (rdbinstance
 func ListInstances(ctx context.Context, provider, region string) ([]models.DBInstance, error) {
 	nsId := utils.GetNsId()
 
+	// tbRdbInstance 조회
 	records, err := repo().FindByNamespace(provider, region, nsId)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load RDB instance records: %w", err)
@@ -102,9 +104,14 @@ func ListInstances(ctx context.Context, provider, region string) ([]models.DBIns
 			orphanIDs = append(orphanIDs, record.InstanceID)
 			continue
 		}
+
+		// alibaba status
 		if record.PublicNetPending {
 			inst.Status = "creating"
+		} else if record.AccountCreateFailed {
+			inst.Status = "masteruser_failed"
 		}
+
 		// 사용자가 생상한 이름으로 교체
 		inst.Name = record.InstanceName
 		exists = append(exists, inst)
@@ -121,8 +128,15 @@ func ListInstances(ctx context.Context, provider, region string) ([]models.DBIns
 	return exists, nil
 }
 
-// CreateInstance resolves credentials for the provider and provisions an instance.
 func CreateInstance(ctx context.Context, provider, region string, spec rdbinstance.CreateSpec) (models.DBInstance, error) {
+	nsId := utils.GetNsId()
+	instanceName := spec.InstanceID
+
+	// namespace별 instance_name(사용자 지정) 중복 가능
+	if err := repo().CheckDuplicate(provider, region, nsId, instanceName); err != nil {
+		return models.DBInstance{}, err
+	}
+
 	creds, err := config.NewAuthManager().LoadCredentialsByProvider(ctx, provider)
 	if err != nil {
 		return models.DBInstance{}, fmt.Errorf("credential load failed: %w", err)
@@ -133,7 +147,30 @@ func CreateInstance(ctx context.Context, provider, region string, spec rdbinstan
 		return models.DBInstance{}, err
 	}
 
-	return p.CreateInstance(ctx, spec)
+	// 실제 csp에 생성되는 instance명
+	cspInstanceName := fmt.Sprintf("%s-%d", instanceName, time.Now().Unix())
+	spec.InstanceID = cspInstanceName
+
+	instance, err := p.CreateInstance(ctx, spec)
+	if err != nil {
+		return models.DBInstance{}, err
+	}
+
+	record := &models.RDBInstanceRecord{
+		Provider:         provider,
+		Region:           region,
+		InstanceID:       instance.InstanceID,
+		InstanceName:     instanceName,
+		CspInstanceName:  cspInstanceName,
+		NamespaceID:      nsId,
+		PublicNetPending: strings.ToLower(provider) == "alibaba",
+	}
+	if err := repo().CreateRDBInstance(record); err != nil {
+		return models.DBInstance{}, fmt.Errorf("CSP instance created but failed to save record: %w", err)
+	}
+
+	instance.Name = instanceName
+	return instance, nil
 }
 
 // DeleteInstance resolves credentials for the provider and deletes an instance.
