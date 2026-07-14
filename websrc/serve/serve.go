@@ -152,6 +152,7 @@ func InitServer(port string, addIP ...string) *echo.Echo {
 	if err := config.DB.AutoMigrate(
 		&models.Credential{},
 		&models.RDBInstanceRecord{},
+		&models.NRDBInstanceRecord{},
 	); err != nil {
 		log.Error().Msgf("Failed to migrate database: %v", err)
 	}

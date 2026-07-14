@@ -62,8 +62,6 @@ func normalizeStatus(s string) string {
 	}
 }
 
-// DeleteInstance deletes an NCP Cloud DB for MySQL instance.
-// instanceID must be the CloudMysqlInstanceNo (numeric string).
 func (p *NCPProvider) DeleteInstance(_ context.Context, instanceID string) (models.DBInstance, error) {
 	resp, err := p.api.DeleteCloudMysqlInstance(&vmysql.DeleteCloudMysqlInstanceRequest{
 		RegionCode:           ncloud.String(p.region),
@@ -243,9 +241,6 @@ func (p *NCPProvider) ListEngineVersions(_ context.Context) ([]models.DBEngineVe
 	return out, nil
 }
 
-// ListInstanceClasses returns available server product codes for the given engine version.
-// NCP requires an image product code to query server products, so the image list is
-// fetched first to find a matching product code for the requested engineVersion.
 func (p *NCPProvider) ListInstanceClasses(_ context.Context, _, engineVersion string) ([]string, error) {
 	imgResp, err := p.api.GetCloudMysqlImageProductList(&vmysql.GetCloudMysqlImageProductListRequest{
 		RegionCode:     ncloud.String(p.region),

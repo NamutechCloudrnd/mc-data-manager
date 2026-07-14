@@ -2,9 +2,10 @@ package rdbinstance
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"strings"
-	"time"
 
 	"encoding/json"
 
@@ -25,6 +26,12 @@ import (
 // shared config.DB connection (set up by config.InitDB() at server startup).
 func repo() *repository.RDBInstanceRepository {
 	return repository.NewRDBInstanceRepository(config.DB)
+}
+
+func randomSuffix(n int) string {
+	b := make([]byte, (n+1)/2)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)[:n]
 }
 
 // providerFor selects and constructs the provider implementation for the given
@@ -148,7 +155,7 @@ func CreateInstance(ctx context.Context, provider, region string, spec rdbinstan
 	}
 
 	// 실제 csp에 생성되는 instance명
-	cspInstanceName := fmt.Sprintf("%s-%d", instanceName, time.Now().Unix())
+	cspInstanceName := fmt.Sprintf("%s-%s", instanceName, randomSuffix(6))
 	spec.InstanceID = cspInstanceName
 
 	instance, err := p.CreateInstance(ctx, spec)

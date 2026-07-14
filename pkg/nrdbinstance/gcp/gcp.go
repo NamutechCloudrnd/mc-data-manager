@@ -3,13 +3,16 @@ package gcp
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/cloud-barista/mc-data-manager/config"
 	"github.com/cloud-barista/mc-data-manager/models"
 	"github.com/cloud-barista/mc-data-manager/pkg/nrdbinstance"
 	firestorev1 "google.golang.org/api/firestore/v1"
+	"google.golang.org/api/googleapi"
 )
 
 // GCPProvider implements nrdbinstance.Provider for GCP Firestore.
@@ -19,8 +22,6 @@ type GCPProvider struct {
 	region  string
 }
 
-// New builds a GCP Firestore provider from a service account credentials JSON,
-// project ID, and region.
 func New(credJSON []byte, projectID, region string) (nrdbinstance.Provider, error) {
 	svc, err := config.NewGCPFirestoreAdminClient(credJSON)
 	if err != nil {
@@ -39,9 +40,6 @@ func databaseIDFromName(name string) string {
 	return parts[len(parts)-1]
 }
 
-// toNRDBInstance converts a Firestore GoogleFirestoreAdminV1Database to NRDBInstance.
-// The Admin API v0.194.0 does not expose a state field on the database resource;
-// a database returned by List is always reachable, so status is "available".
 func toNRDBInstance(db *firestorev1.GoogleFirestoreAdminV1Database, region string) models.NRDBInstance {
 	id := databaseIDFromName(db.Name)
 	return models.NRDBInstance{
@@ -105,6 +103,10 @@ func (p *GCPProvider) DeleteInstance(ctx context.Context, instanceID string) (mo
 	name := fmt.Sprintf("projects/%s/databases/%s", p.project, instanceID)
 	op, err := p.svc.Projects.Databases.Delete(name).Context(ctx).Do()
 	if err != nil {
+		var gerr *googleapi.Error
+		if errors.As(err, &gerr) && gerr.Code == http.StatusNotFound {
+			return models.NRDBInstance{Provider: "gcp", InstanceID: instanceID, Status: "deleted", Region: p.region}, nil
+		}
 		return models.NRDBInstance{}, fmt.Errorf("failed to delete Firestore database: %w", err)
 	}
 	_ = op

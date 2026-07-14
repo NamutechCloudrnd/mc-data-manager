@@ -173,9 +173,6 @@ func (p *GCPProvider) DeleteInstance(ctx context.Context, instanceID string) (mo
 	}, nil
 }
 
-// buildCreateRequest maps a CSP-agnostic CreateSpec to a Cloud SQL DatabaseInstance.
-// IpConfiguration is fixed to public access with all-network whitelist; these are
-// not taken from the request body, consistent with other CSP providers.
 func buildCreateRequest(spec rdbinstance.CreateSpec, region string) *sqladmin.DatabaseInstance {
 	return &sqladmin.DatabaseInstance{
 		Name:            spec.InstanceID,
@@ -196,8 +193,6 @@ func buildCreateRequest(spec rdbinstance.CreateSpec, region string) *sqladmin.Da
 	}
 }
 
-// CreateInstance provisions a new Cloud SQL instance. GCP Cloud SQL only supports
-// "root" as the master username for MySQL; any other value is rejected.
 func (p *GCPProvider) CreateInstance(ctx context.Context, spec rdbinstance.CreateSpec) (models.DBInstance, error) {
 	if spec.MasterUsername != "root" {
 		return models.DBInstance{}, fmt.Errorf("GCP Cloud SQL only supports 'root' as masterUsername for MySQL")
