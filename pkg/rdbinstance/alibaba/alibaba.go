@@ -228,8 +228,6 @@ func (p *AlibabaProvider) ListInstances(ctx context.Context) ([]models.DBInstanc
 	return out, nil
 }
 
-// DeleteInstance deletes an RDS instance without retaining any backup. The response
-// has no instance details, so the returned model is constructed locally.
 func (p *AlibabaProvider) DeleteInstance(ctx context.Context, instanceID string) (models.DBInstance, error) {
 	_, err := p.client.DeleteDBInstance(&alibabards.DeleteDBInstanceRequest{
 		DBInstanceId:       tea.String(instanceID),
@@ -306,8 +304,6 @@ func zoneIDs(body *alibabards.DescribeAvailableZonesResponseBody) []string {
 	return distinctSorted(ids)
 }
 
-// ListEngineVersions returns available engine versions for the supported engines,
-// queried per engine and merged.
 func (p *AlibabaProvider) ListEngineVersions(ctx context.Context) ([]models.DBEngineVersion, error) {
 	var out []models.DBEngineVersion
 	for _, engine := range supportedEngines {
@@ -329,8 +325,6 @@ func (p *AlibabaProvider) ListEngineVersions(ctx context.Context) ([]models.DBEn
 // Alibaba supports only these three; we brute-force (zone × storageType).
 var storageTypes = []string{"cloud_ssd", "cloud_essd"}
 
-// ListInstanceClasses returns the orderable instance classes for engine+version
-// under the Basic category, gathered across all zones in the region.
 func (p *AlibabaProvider) ListInstanceClasses(ctx context.Context, engine, engineVersion string) ([]string, error) {
 	zonesResp, err := p.client.DescribeAvailableZones(&alibabards.DescribeAvailableZonesRequest{
 		RegionId:      tea.String(p.region),
@@ -375,4 +369,14 @@ func (p *AlibabaProvider) ListInstanceClasses(ctx context.Context, engine, engin
 	}
 
 	return distinctSorted(classes), nil
+}
+
+func (p *AlibabaProvider) CreateAccount(instanceID, username, password string) error {
+	_, err := p.client.CreateAccount(&alibabards.CreateAccountRequest{
+		DBInstanceId:    tea.String(instanceID),
+		AccountName:     tea.String(username),
+		AccountPassword: tea.String(password),
+		AccountType:     tea.String("Super"),
+	})
+	return err
 }

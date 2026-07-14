@@ -13,15 +13,11 @@ import (
 
 const (
 	alibabaPollInterval = 5 * time.Second
-	alibabaPollTimeout = 20 * time.Minute
+	alibabaPollTimeout = 15 * time.Minute
 	alibabaPublicPort = "3306"
 	statusRunning     = "Running"
 )
 
-// provisionInBackground waits for the instance to become Running, allocates the
-// public endpoint, then creates the master account. Best-effort: neither step
-// blocks the other — a public endpoint failure/timeout leaves public_net_pending
-// true but still proceeds to try account creation, and vice versa.
 func (p *AlibabaProvider) provisionInBackground(instanceID, masterUsername, masterPassword string) {
 	logger := log.With().Str("provider", "alibaba").Str("instanceId", instanceID).Logger()
 
@@ -48,7 +44,7 @@ func (p *AlibabaProvider) provisionInBackground(instanceID, masterUsername, mast
 	}
 
 	// 계정 생성
-	if err := p.createAccount(instanceID, masterUsername, masterPassword); err != nil {
+	if err := p.CreateAccount(instanceID, masterUsername, masterPassword); err != nil {
 		logger.Error().Err(err).Msg("alibaba CreateAccount failed")
 		if err := repository.NewRDBInstanceRepository(config.DB).
 			UpdateAccountCreateFailed("alibaba", p.region, instanceID, true); err != nil {
@@ -128,17 +124,6 @@ func (p *AlibabaProvider) instanceStatus(instanceID string) (string, error) {
 		return tea.StringValue(resp.Body.Items.DBInstanceAttribute[0].DBInstanceStatus), nil
 	}
 	return "", lastErr
-}
-
-// createAccount creates the master account on the instance.
-func (p *AlibabaProvider) createAccount(instanceID, username, password string) error {
-	_, err := p.client.CreateAccount(&alibabards.CreateAccountRequest{
-		DBInstanceId:    tea.String(instanceID),
-		AccountName:     tea.String(username),
-		AccountPassword: tea.String(password),
-		AccountType:     tea.String("Super"),
-	})
-	return err
 }
 
 // allocatePublicConnection allocates a public endpoint for the instance.

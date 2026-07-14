@@ -12,9 +12,7 @@ import (
 
 const (
 	ncpPollInterval = 5 * time.Second
-	ncpPollTimeout  = 10 * time.Minute
-	ncpBasePath     = "https://vmysql.apigw.ntruss.com/api/v2"
-	// ncpBasePath = "https://console.ncloud.com/vpcCloudMysql/api/v1"
+	ncpPollTimeout  = 20 * time.Minute
 	ncpStatusRunning = "running"
 )
 

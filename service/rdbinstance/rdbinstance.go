@@ -198,6 +198,42 @@ func DeleteInstance(ctx context.Context, provider, region, instanceID string) (m
 	return instance, nil
 }
 
+func CreateAccount(ctx context.Context, provider, region, instanceID, username, password string) error {
+	if strings.ToLower(provider) != "alibaba" {
+		return fmt.Errorf("account creation API is only supported for alibaba")
+	}
+
+	// tbRdbInstance 상태 체크
+	record, err := repo().FindByInstanceID(provider, region, instanceID)
+	if err != nil {
+		return fmt.Errorf("failed to load RDB instance record: %w", err)
+	}
+	if !record.AccountCreateFailed {
+		return fmt.Errorf("account creation was not flagged as failed for this instance")
+	}
+
+	creds, err := config.NewAuthManager().LoadCredentialsByProvider(ctx, provider)
+	if err != nil {
+		return fmt.Errorf("credential load failed: %w", err)
+	}
+
+	p, err := providerFor(provider, creds, region)
+	if err != nil {
+		return err
+	}
+
+	ap, ok := p.(*alibabaprovider.AlibabaProvider)
+	if !ok {
+		return fmt.Errorf("unexpected provider implementation for alibaba")
+	}
+
+	if err := ap.CreateAccount(instanceID, username, password); err != nil {
+		return err
+	}
+
+	return repo().UpdateAccountCreateFailed(provider, region, instanceID, false)
+}
+
 // ListEngineVersions returns available DB engine versions for the provider.
 func ListEngineVersions(ctx context.Context, provider, region string) ([]models.DBEngineVersion, error) {
 	creds, err := config.NewAuthManager().LoadCredentialsByProvider(ctx, provider)

@@ -28,6 +28,14 @@ func (r *RDBInstanceRepository) FindByNamespace(provider, region, namespaceID st
 	return records, nil
 }
 
+func (r *RDBInstanceRepository) FindByInstanceID(provider, region, instanceID string) (*models.RDBInstanceRecord, error) {
+	var record models.RDBInstanceRecord
+	if err := r.db.Where("provider = ? AND region = ? AND instance_id = ?", provider, region, instanceID).First(&record).Error; err != nil {
+		return nil, err
+	}
+	return &record, nil
+}
+
 func (r *RDBInstanceRepository) CheckDuplicate(provider, region, namespaceID, instanceName string) error {
 	var count int64
 	r.db.Model(&models.RDBInstanceRecord{}).
