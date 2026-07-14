@@ -1518,6 +1518,7 @@
         // 인스턴스 선택 시 '+ Instance' → '+ Sample Data' 전환 (gen-mysql과 동일 UX)
         sample: {},
         getSelected: () => selectedSrcInstance,
+        getRows: () => srcRdbmsAllRows,
         onData: (instances) => {
             srcRdbmsAllRows = instances || [];
             // 삭제 완료 등으로 선택 인스턴스가 목록에서 사라지면 선택/접속정보 정리
@@ -1543,6 +1544,7 @@
         // 인스턴스 선택 시 '+ Instance' → '+ Sample Data' 전환 (gen-mysql과 동일 UX)
         sample: {},
         getSelected: () => selectedTgtInstance,
+        getRows: () => tgtRdbmsAllRows,
         onData: (instances) => {
             tgtRdbmsAllRows = instances || [];
             if (selectedTgtInstance && !tgtRdbmsAllRows.some(i => i.instanceId === selectedTgtInstance.instanceId)) {

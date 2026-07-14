@@ -1420,12 +1420,17 @@ const BucketPanel = (() => {
         if (ocRefs.createModal) {
             document.getElementById('bktCreateModal').addEventListener('show.bs.modal', () => {
                 document.getElementById('bkt-create-input').value = '';
+                document.getElementById('bkt-create-input').classList.remove('is-invalid');
                 document.getElementById('bkt-create-error').classList.add('d-none');
                 document.getElementById('bkt-create-confirm').disabled = true;
             });
             document.getElementById('bkt-create-input').addEventListener('input', function () {
                 const name = this.value.trim();
-                const msg = bucketNameError(name);
+                let msg = bucketNameError(name);
+                if (!msg && name && createTarget?.panel.allBuckets.some(b => b.name === name)) {
+                    msg = 'This bucket name already exists.';
+                }
+                this.classList.toggle('is-invalid', !!msg);
                 const errEl = document.getElementById('bkt-create-error');
                 errEl.textContent = msg;
                 errEl.classList.toggle('d-none', !msg);
@@ -1487,12 +1492,13 @@ const BucketPanel = (() => {
             }
             ocRefs.createModal.hide();
             // 방금 만든 버킷을 바로 선택 상태로 (gen-object-storage와 동일 UX)
+            // select 페이지는 목록 갱신으로 옵션이 생긴 뒤에 값을 넣어야 반영된다
+            await panel.load();
             if (panel.bucketInput) {
                 panel.bucketInput.value = name;
                 panel.selectedRegion = panel.region.value || null;
                 panel.bucketInput.dispatchEvent(new Event('input'));
             }
-            panel.load();
         } catch (err) {
             alert('Failed to create bucket: ' + err.message);
         } finally {
@@ -1730,6 +1736,16 @@ const BucketPanel = (() => {
                 r.classList.toggle('table-active', r.dataset.name === name));
         }
 
+        // bucketInput이 <select>면 로드된 버킷 이름으로 옵션 구성 (Target Bucket Select 페이지)
+        function populateBucketSelect() {
+            const sel = panel.bucketInput;
+            if (!sel || sel.tagName !== 'SELECT') return;
+            const cur = sel.value;
+            sel.replaceChildren(new Option('- Select Bucket -', ''));
+            [...new Set(panel.allBuckets.map(b => b.name))].forEach(n => sel.add(new Option(n, n)));
+            sel.value = cur && panel.allBuckets.some(b => b.name === cur) ? cur : '';
+        }
+
         function render() {
             const q = panel.query.trim().toLowerCase();
             const filtered = q ? panel.allBuckets.filter(b => (b.name || '').toLowerCase().includes(q)) : panel.allBuckets;
@@ -1801,6 +1817,7 @@ const BucketPanel = (() => {
             const provider = panel.provider.value || '';
             if (!provider || provider === 'none') {
                 panel.allBuckets = [];
+                populateBucketSelect();
                 panel.tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted small py-3">Select a credential to list buckets</td></tr>';
                 panel.pagination.innerHTML = '';
                 return;
@@ -1816,6 +1833,7 @@ const BucketPanel = (() => {
                 panel.allBuckets = (json.objectStorage || []).filter(b =>
                     (b.connectionConfig?.providerName || b.connectionName || '').toLowerCase().startsWith(provider.toLowerCase()));
                 panel.page = 1;
+                populateBucketSelect();
                 render();
             } catch (e) {
                 console.error('BucketPanel.load:', e);
@@ -1843,6 +1861,22 @@ const BucketPanel = (() => {
         }
         if (panel.bucketInput) {
             panel.bucketInput.addEventListener('input', () => { syncHighlight(); updateDeleteBtn(); });
+        }
+        // Target Bucket <select>: 선택 시 버킷 실제 리전 동기화 (행 클릭과 동일 규칙)
+        if (panel.bucketInput?.tagName === 'SELECT') {
+            panel.bucketInput.addEventListener('change', () => {
+                const provider = panel.provider.value || '';
+                const b = panel.allBuckets.find(x => x.name === panel.bucketInput.value);
+                panel.selectedRegion = null;
+                if (b) {
+                    const region = bucketRegionOf(b, provider);
+                    const connRegion = (b.connectionName || '').replace(`${provider}-`, '');
+                    const matched = matchRegionOption(panel.region, region, connRegion);
+                    panel.selectedRegion = matched || region || null;
+                    if (matched && panel.region.value !== matched) panel.region.value = matched;
+                }
+                panel.bucketInput.dispatchEvent(new Event('input')); // 하이라이트/버튼 동기화 재사용
+            });
         }
         // 툴바 Delete 버튼: 선택된 버킷 삭제 (유일한 삭제 진입점)
         if (panel.deleteBtn) {
@@ -1897,9 +1931,9 @@ const DBInstancePanel = (() => {
     const POLL_MS = 5000;
 
     // ── provider별 계정/비밀번호 규칙 (gen-mysql/gen-no-sql과 동일 기준) ──
-    const RDB_ALIBABA_BLOCKED = ['admin', 'root', 'test', 'mysql', 'aliyun', 'aurora',
-        'replicator', 'eagleye', 'guest', 'sys', 'information_schema', 'performance_schema',
-        'select', 'insert', 'update', 'delete', 'user', 'database'];
+    // Alibaba: 클라이언트에서는 admin/root/user/test만 금지 (gen-mysql과 동일) —
+    // 실제 예약어 위반은 생성 시 CSP API 응답(InvalidAccountName.Forbid)으로 안내된다.
+    const RDB_ALIBABA_BLOCKED = ['admin', 'root', 'user', 'test'];
     const RDB_NCP_BLOCKED = ['root','admin','radmin','agent','api_admin','ha_admin',
         'ragent','repl_admin','mysql.session','mysql.sys'];
     const COMMON_PW = ['password','password1','password123','12345678','123456789',
@@ -1908,12 +1942,12 @@ const DBInstancePanel = (() => {
     function usernameHelp(kind, provider) {
         const p = (provider || '').toLowerCase();
         if (kind === 'nrdbms') {
-            if (p === 'alibaba') return 'Only "root" is allowed.';
-            if (p === 'ncp') return '"admin" and "root" are not allowed.';
+            if (p === 'alibaba') return "Only 'root' is allowed.";
+            if (p === 'ncp') return "'admin' and 'root' are not allowed.";
             return '';
         }
-        if (p === 'gcp') return 'Fixed to "root".';
-        if (p === 'alibaba') return 'Reserved usernames (admin, root, ...) are not allowed.';
+        if (p === 'gcp') return "Only 'root' is allowed.";
+        if (p === 'alibaba') return 'Not allowed: admin, root, user, test.';
         if (p === 'ncp') return 'Not allowed: root, admin, radmin, agent, api_admin, ha_admin, ragent, repl_admin, mysql.session, mysql.sys.';
         return '';
     }
@@ -1935,6 +1969,8 @@ const DBInstancePanel = (() => {
             if (RDB_ALIBABA_BLOCKED.includes(lc)) return `'${v}' is not allowed as a username.`;
         }
         if (p === 'ncp' && RDB_NCP_BLOCKED.includes(lc)) return `'${v}' is not allowed as a username.`;
+        // gen-mysql과 동일: GCP는 root만 허용 (강제 채움 대신 검증+안내)
+        if (p === 'gcp' && lc !== 'root') return "Only 'root' is allowed.";
         return '';
     }
     function passwordError(provider, val) {
@@ -1947,11 +1983,15 @@ const DBInstancePanel = (() => {
         return '';
     }
     // instance class를 family/size로 분리 (gen-mysql icSplit과 동일 기준)
-    function icFamily(cls, provider) {
+    function icSplit(cls, provider) {
         const p = (provider || '').toLowerCase();
-        if (p === 'gcp') return cls.split('-').slice(0, 2).join('-');
-        if (p === 'ncp') return cls.split('.').slice(0, 4).join('.');
-        return cls.split('.').slice(0, 2).join('.');
+        if (p === 'gcp') {
+            const parts = cls.split('-');
+            return { family: parts.slice(0, 2).join('-'), size: parts.slice(2).join('-') };
+        }
+        const n = p === 'ncp' ? 4 : 2;
+        const parts = cls.split('.');
+        return { family: parts.slice(0, n).join('.'), size: parts.slice(n).join('.') };
     }
 
     // ── 파셜 refs (lazy 싱글턴) + 활성 패널 ──────────────────
@@ -1959,6 +1999,7 @@ const DBInstancePanel = (() => {
     let active = null;      // 오프캔버스를 연 패널
     let deleteCtx = null;   // { panel, instanceId, name }
     let engineVersionData = [];
+    let icClasses = [];     // 현재 Instance Class 목록 (2패널 드롭다운)
     let pollTimer = null;
 
     function uiInit() {
@@ -1971,6 +2012,12 @@ const DBInstancePanel = (() => {
             engine: document.getElementById('dbi-engine'),
             version: document.getElementById('dbi-engineVersion'),
             klass: document.getElementById('dbi-instanceClass'),
+            icWrapper: document.getElementById('dbi-icWrapper'),
+            icTrigger: document.getElementById('dbi-icTrigger'),
+            icTriggerText: document.getElementById('dbi-icTriggerText'),
+            icPanel: document.getElementById('dbi-icPanel'),
+            icFamilyList: document.getElementById('dbi-icFamilyList'),
+            icSizeList: document.getElementById('dbi-icSizeList'),
             instanceId: document.getElementById('dbi-instanceId'),
             storage: document.getElementById('dbi-storage'),
             username: document.getElementById('dbi-username'),
@@ -1979,14 +2026,30 @@ const DBInstancePanel = (() => {
         };
         refs.engine.addEventListener('change', () => { populateVersions(); updateCreateBtn(); });
         refs.version.addEventListener('change', () => { loadClasses(); updateCreateBtn(); });
-        refs.klass.addEventListener('change', updateCreateBtn);
-        refs.instanceId.addEventListener('input', updateCreateBtn);
+        refs.icTrigger.addEventListener('click', () => {
+            if (!icClasses.length) return;
+            refs.icPanel.classList.toggle('d-none');
+        });
+        refs.icTrigger.addEventListener('keydown', e => {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); refs.icTrigger.click(); }
+            if (e.key === 'Escape') icClose();
+        });
+        document.addEventListener('click', e => {
+            if (!refs.icWrapper.contains(e.target)) icClose();
+        });
+        // 중복 Instance ID: is-invalid + invalid-feedback로 표시 (storage와 동일 패턴)
+        refs.instanceId.addEventListener('input', () => {
+            const dup = instanceIdDup();
+            refs.instanceId.classList.toggle('is-invalid', dup);
+            refs.instanceId.closest('.form-floating').classList.toggle('is-invalid', dup);
+            updateCreateBtn();
+        });
+        // gen-mysql/gen-no-sql과 동일: is-invalid + invalid-feedback로 표시
         refs.storage.addEventListener('input', () => {
             const min = Number(refs.storage.min) || 20;
             const bad = refs.storage.value !== '' && Number(refs.storage.value) < min;
-            const el = document.getElementById('dbi-storage-error');
-            el.textContent = bad ? `Please enter ${min} GB or more.` : '';
-            el.classList.toggle('d-none', !bad);
+            refs.storage.classList.toggle('is-invalid', bad);
+            refs.storage.closest('.form-floating').classList.toggle('is-invalid', bad);
             updateCreateBtn();
         });
         refs.username.addEventListener('input', () => {
@@ -2038,11 +2101,13 @@ const DBInstancePanel = (() => {
         document.getElementById('dbi-context').textContent =
             (panel.getCredLabel && panel.getCredLabel()) || `${provider} / ${panel.getRegion()}`;
         // 폼 초기화 + provider별 규칙
-        resetSelect(r.engine); resetSelect(r.version); resetSelect(r.klass);
+        resetSelect(r.engine); resetSelect(r.version); icReset();
         r.instanceId.value = '';
+        r.instanceId.classList.remove('is-invalid');
+        r.instanceId.closest('.form-floating').classList.remove('is-invalid');
         r.username.value = '';
         r.password.value = '';
-        ['dbi-storage-error', 'dbi-username-error', 'dbi-password-error'].forEach(id => {
+        ['dbi-username-error', 'dbi-password-error'].forEach(id => {
             const el = document.getElementById(id);
             el.textContent = ''; el.classList.add('d-none');
         });
@@ -2060,12 +2125,16 @@ const DBInstancePanel = (() => {
         document.getElementById('dbi-storage-group').classList.toggle('d-none', storageHidden);
         r.storage.min = (panel.kind === 'rdbms' && p === 'gcp') ? '10' : '20';
         r.storage.value = r.storage.min;
-        // username: rdbms gcp는 root 고정
-        const fixedRoot = panel.kind === 'rdbms' && p === 'gcp';
-        r.username.readOnly = fixedRoot;
-        r.username.classList.toggle('bg-light', fixedRoot);
-        if (fixedRoot) r.username.value = 'root';
-        document.getElementById('dbi-username-help').textContent = simple ? '' : usernameHelp(panel.kind, provider);
+        document.getElementById('dbi-storage-error').textContent = `Please enter ${r.storage.min} GB or more.`;
+        r.storage.classList.remove('is-invalid');
+        r.storage.closest('.form-floating').classList.remove('is-invalid');
+        // username: gen-mysql과 동일 — GCP도 강제 채움/readonly 없이 검증+안내로만 처리
+        const help = simple ? '' : usernameHelp(panel.kind, provider);
+        document.getElementById('dbi-username-help').textContent = help;
+        // 여백: 헬퍼 문구가 바로 아래 붙는 provider는 mb-1, 그 외 mb-3 (gen과 동일)
+        const unGrp = document.getElementById('dbi-username-group');
+        unGrp.classList.toggle('mb-1', !!help);
+        unGrp.classList.toggle('mb-3', !help);
         updateCreateBtn();
         r.oc.show();
         if (!simple) loadEngineVersions();
@@ -2074,6 +2143,13 @@ const DBInstancePanel = (() => {
     // NoSQL aws/gcp: 프로비저닝 스펙 없이 Instance ID만으로 생성 (백엔드도 instanceId만 필수)
     function isSimpleCreate(panel, providerLower) {
         return panel.kind === 'nrdbms' && (providerLower === 'aws' || providerLower === 'gcp');
+    }
+
+    // 기존 인스턴스와 중복된 Instance ID인지 (페이지가 목록을 getRows로 제공)
+    function instanceIdDup() {
+        const v = refs.instanceId.value.trim();
+        if (!v || !active?.getRows) return false;
+        return (active.getRows() || []).some(i => i.instanceId === v || i.name === v);
     }
 
     async function loadEngineVersions() {
@@ -2120,7 +2196,7 @@ const DBInstancePanel = (() => {
             opt.value = v; opt.textContent = v;
             refs.version.appendChild(opt);
         });
-        resetSelect(refs.klass);
+        icReset();
         if (versions.length) {
             refs.version.selectedIndex = 1;
             loadClasses();
@@ -2128,7 +2204,7 @@ const DBInstancePanel = (() => {
     }
 
     async function loadClasses() {
-        if (!active || !refs.version.value) { resetSelect(refs.klass); return; }
+        if (!active || !refs.version.value) { icReset(); return; }
         const provider = active.getProvider();
         const body = { provider, region: active.getRegion(), engineVersion: refs.version.value };
         if (active.kind === 'rdbms') body.engine = refs.engine.value;
@@ -2138,28 +2214,66 @@ const DBInstancePanel = (() => {
                 body: JSON.stringify(body)
             });
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            const classes = await res.json() || [];
-            // family별 optgroup으로 정리 (gen의 2패널 드롭다운을 단순 select로 제공)
-            resetSelect(refs.klass);
-            const groups = new Map();
-            classes.forEach(c => {
-                const f = icFamily(c, provider);
-                if (!groups.has(f)) groups.set(f, []);
-                groups.get(f).push(c);
-            });
-            groups.forEach((list, family) => {
-                const og = document.createElement('optgroup');
-                og.label = family;
-                list.forEach(c => {
-                    const opt = document.createElement('option');
-                    opt.value = c; opt.textContent = c;
-                    og.appendChild(opt);
-                });
-                refs.klass.appendChild(og);
-            });
-            if (classes.length) refs.klass.value = classes[0];
-            updateCreateBtn();
+            icLoadFamilies(await res.json() || []);
         } catch (e) { console.error('DBInstancePanel.instanceClass:', e); }
+    }
+
+    // ── Instance Class 2패널 드롭다운 (gen-mysql/gen-no-sql과 동일 UX) ──
+    function icClose() { refs.icPanel.classList.add('d-none'); }
+
+    function icReset() {
+        icClasses = [];
+        refs.klass.value = '';
+        refs.icTriggerText.textContent = '-';
+        refs.icTriggerText.classList.add('text-muted');
+        refs.icFamilyList.innerHTML = '';
+        refs.icSizeList.innerHTML = '';
+        icClose();
+    }
+
+    function icSelectFamily(family, familyEl) {
+        const provider = active ? active.getProvider() : '';
+        refs.icFamilyList.querySelectorAll('.ic-family-item').forEach(el => el.classList.remove('active'));
+        familyEl.classList.add('active');
+        const sep = (provider || '').toLowerCase() === 'gcp' ? '-' : '.';
+        const sizes = icClasses.filter(c => c.startsWith(family + sep));
+        refs.icSizeList.innerHTML = '';
+        sizes.forEach(s => {
+            const div = document.createElement('div');
+            div.className = 'ic-size-item px-3 py-2 small';
+            div.textContent = icSplit(s, provider).size;
+            div.addEventListener('click', e => {
+                e.stopPropagation();
+                refs.klass.value = s;
+                refs.icTriggerText.textContent = s;
+                refs.icTriggerText.classList.remove('text-muted');
+                icClose();
+                updateCreateBtn();
+            });
+            refs.icSizeList.appendChild(div);
+        });
+    }
+
+    function icLoadFamilies(classes) {
+        const provider = active ? active.getProvider() : '';
+        icReset();
+        icClasses = Array.isArray(classes) ? classes : [];
+        const families = [...new Set(icClasses.map(c => icSplit(c, provider).family))];
+        families.forEach(f => {
+            const div = document.createElement('div');
+            div.className = 'ic-family-item px-3 py-2 small';
+            div.textContent = f;
+            div.addEventListener('click', e => { e.stopPropagation(); icSelectFamily(f, div); });
+            refs.icFamilyList.appendChild(div);
+        });
+        // gen과 동일: 첫 family/size 자동 선택
+        const firstEl = refs.icFamilyList.querySelector('.ic-family-item');
+        if (firstEl) {
+            icSelectFamily(families[0], firstEl);
+            const firstSize = refs.icSizeList.querySelector('.ic-size-item');
+            if (firstSize) firstSize.click();
+        }
+        updateCreateBtn();
     }
 
     function updateCreateBtn() {
@@ -2167,7 +2281,7 @@ const DBInstancePanel = (() => {
         const provider = active.getProvider();
         // NoSQL aws/gcp: Instance ID만으로 생성 가능
         if (isSimpleCreate(active, (provider || '').toLowerCase())) {
-            refs.createBtn.disabled = !refs.instanceId.value.trim();
+            refs.createBtn.disabled = !refs.instanceId.value.trim() || instanceIdDup();
             return;
         }
         const storageHidden = document.getElementById('dbi-storage-group').classList.contains('d-none');
@@ -2176,6 +2290,7 @@ const DBInstancePanel = (() => {
         const un = refs.username.value.trim();
         const pw = refs.password.value;
         const ok = refs.instanceId.value.trim()
+            && !instanceIdDup()
             && refs.version.value
             && refs.klass.value
             && storageOk
@@ -2295,6 +2410,7 @@ const DBInstancePanel = (() => {
             getRegion: cfg.getRegion,
             getCredLabel: cfg.getCredLabel,
             getSelected: cfg.getSelected,
+            getRows: cfg.getRows,       // 중복 Instance ID 검증용 현재 목록 (옵션)
             onData: cfg.onData,
             createBtn: cfg.createBtn || null,
             deleteBtn: cfg.deleteBtn || null,
@@ -2355,7 +2471,7 @@ const DBInstancePanel = (() => {
 //   [SQL/rdbms]   선택한 인스턴스의 Host 준비 후(alibaba/ncp는 공인 'pub') 계정 입력 → /generate/rdbms
 //   [NoSQL/nrdbms] AWS: 서버리스 — Instance ID만 입력
 //                  GCP: Database ID = 선택한 Instance ID (읽기 전용)
-//                  NCP/Alibaba: 공인('pub') 호스트 준비 후 계정 + DB 선택(Load Databases)
+//                  NCP/Alibaba: 공인('pub') 호스트 준비 후 계정 + Database Name 입력
 //                  → /generate/nrdbms
 // ─────────────────────────────────────────────────────────────────────────────
 const SamplePanel = (() => {
@@ -2413,7 +2529,6 @@ const SamplePanel = (() => {
             usernameHelp:  document.getElementById('nsp-username-help'),
             usernameErr:   document.getElementById('nsp-username-error'),
             password:      document.getElementById('nsp-password'),
-            loadDbBtn:     document.getElementById('nsp-load-db-btn'),
             database:      document.getElementById('nsp-database'),
             submitBtn:     document.getElementById('nsp-submitBtn'),
         };
@@ -2424,9 +2539,8 @@ const SamplePanel = (() => {
             updateSubmit();
         });
         refs.password.addEventListener('input', updateSubmit);
-        refs.database.addEventListener('change', updateSubmit);
+        refs.database.addEventListener('input', updateSubmit);
         refs.instanceId.addEventListener('input', updateSubmit);
-        refs.loadDbBtn.addEventListener('click', loadDatabases);
         refs.submitBtn.addEventListener('click', submit);
         return refs;
     }
@@ -2445,10 +2559,6 @@ const SamplePanel = (() => {
         if (!sel) return false;
         if (p === 'gcp') return true;               // Database ID = Instance ID
         return hostReady(sel.endpoint, p);          // ncp/alibaba: 공인 도메인 준비 후
-    }
-
-    function resetDbSelect() {
-        refs.database.innerHTML = '<option value="">- Select Database -</option>';
     }
 
     function open(cfg) {
@@ -2471,7 +2581,7 @@ const SamplePanel = (() => {
         refs.usernameErr.classList.add('d-none');
         refs.usernameHelp.textContent = usernameHelp(kind, p);
         refs.password.value = '';
-        resetDbSelect();
+        refs.database.value = '';
         updateSubmit();
         refs.oc.show();
     }
@@ -2488,41 +2598,6 @@ const SamplePanel = (() => {
         else if (p === 'aws') ok = !!refs.instanceId.value.trim();
         else ok = !!un && !usernameError(kind, p, un) && !!pw && !!refs.database.value.trim();
         refs.submitBtn.disabled = !ok;
-    }
-
-    // Database 목록 조회 (POST /db/nrdbms/databases) — gen-no-sql과 동일 패턴 (NoSQL mongo 전용)
-    function loadDatabases() {
-        const sel = active?.getSelected?.() || null;
-        const host = sel?.endpoint || '';
-        const port = String(sel?.port || '');
-        const username = refs.username.value.trim();
-        const password = refs.password.value;
-        if (!host || !port || !username || !password) {
-            alert('Please select an instance and enter Username and Password.');
-            return;
-        }
-        const btn = refs.loadDbBtn;
-        btn.disabled = true;
-        btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
-        fetch('/db/nrdbms/databases', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ targetPoint: {
-                provider: providerOf(), region: active.getRegion() || '',
-                host, port, username, password, instanceId: sel?.instanceId || '',
-            } })
-        })
-        .then(r => r.ok ? r.json() : Promise.reject(r.status))
-        .then(json => {
-            resetDbSelect();
-            (Array.isArray(json) ? json : []).forEach(db => {
-                const opt = document.createElement('option');
-                opt.value = db; opt.textContent = db;
-                refs.database.appendChild(opt);
-            });
-            updateSubmit();
-        })
-        .catch(err => alert(`Failed to load databases: ${err}`))
-        .finally(() => { btn.disabled = false; btn.textContent = 'Load Databases'; });
     }
 
     // 샘플데이터 생성 — gen-mysql(/generate/rdbms)·gen-no-sql(/generate/nrdbms)과 동일 payload
@@ -2589,3 +2664,14 @@ const SamplePanel = (() => {
 
     return { attach, canOpen, open };
 })();
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 테이블 외부 클릭 시 행 선택 해제 (Bucket/Instance 목록 공통)
+// 선택된 행을 다시 클릭한 것과 동일하게 처리해 각 페이지의 기존 토글 해제
+// 로직(하이라이트 제거·상태 정리)을 그대로 재사용한다.
+// 테이블·오프캔버스·모달·페이지네이션·상호작용 요소 클릭은 선택을 유지한다.
+// ─────────────────────────────────────────────────────────────────────────────
+document.addEventListener('click', e => {
+    if (e.target.closest('table, .offcanvas, .offcanvas-backdrop, .modal, .modal-backdrop, .pagination, .dropdown-menu, .form-select, button, a, input, select, textarea, label')) return;
+    document.querySelectorAll('tbody tr.table-active').forEach(r => r.click());
+});

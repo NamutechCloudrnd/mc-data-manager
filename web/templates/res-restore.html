@@ -139,11 +139,13 @@
                     <div class="input-group mt-3">
                         <span class="input-group-text rounded-start"><i class="fa-solid fa-bucket"></i></span>
                         <div class="form-floating">
-                            <input type="text" class="form-control rounded-end" id="targetBucket" name="targetPoint[bucket]" placeholder="Bucket" autocomplete="off">
+                            <select class="form-select rounded-end" id="targetBucket" name="targetPoint[bucket]">
+                                <option value="">- Select Bucket -</option>
+                            </select>
                             <label for="targetBucket">Target Bucket</label>
                         </div>
                     </div>
-                    <div class="text-muted small ps-2 mt-1">Click a bucket in the list to select it, or type a new name to create it on submit.</div>
+                    <div class="text-muted small ps-2 mt-1">Click a bucket in the list or choose one from the dropdown. Use + Bucket to create a new one.</div>
                 </div>
                 <div class="form-section mt-3" id="rdbms" style="display:none;">
                     <div class="d-flex justify-content-between align-items-center mb-3">
@@ -370,6 +372,7 @@ const target = {
             // 인스턴스 선택 시 '+ Instance' → '+ Sample Data' 전환 (gen-mysql과 동일 UX)
             sample: {},
             getSelected: () => selectedRestoreInstance,
+            getRows: () => restoreRdbmsAllRows,
             onData: (instances) => {
                 restoreRdbmsAllRows = instances || [];
                 if (selectedRestoreInstance && !restoreRdbmsAllRows.some(i => i.instanceId === selectedRestoreInstance.instanceId)) {
@@ -390,6 +393,7 @@ const target = {
             // AWS(서버리스)는 목록/버튼이 숨겨지므로 안내 배너의 전용 버튼으로 진입
             sample: { awsBtn: document.getElementById('res-nrdb-aws-sampleBtn') },
             getSelected: () => selectedRestoreNrdbInstance,
+            getRows: () => restoreNrdbAllRows,
             onData: (instances) => {
                 restoreNrdbAllRows = instances || [];
                 if (selectedRestoreNrdbInstance && !restoreNrdbAllRows.some(i => i.instanceId === selectedRestoreNrdbInstance.instanceId)) {

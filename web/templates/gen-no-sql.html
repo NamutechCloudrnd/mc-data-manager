@@ -163,6 +163,7 @@
                         <input type="text" class="form-control rounded-end" id="gen-nosql-instanceId" autocomplete="off" name="instanceId" placeholder="Instance ID" required>
                         <label for="gen-nosql-instanceId">Instance ID</label>
                     </div>
+                    <div class="invalid-feedback ps-2">This instance ID already exists.</div>
                 </div>
                 <div class="input-group mb-3" id="storage-group">
                     <span class="input-group-text rounded-start"><i class="bi bi-archive-fill"></i></span>
@@ -221,16 +222,11 @@
                         <label for="connect-password">Password</label>
                     </div>
                 </div>
-                <!-- Database: 계정 정보 입력 후 Load Databases로 목록 조회 → 선택 (mig-mysql와 동일 패턴) -->
-                <div class="d-flex justify-content-end mb-2" id="connect-load-db-wrap">
-                    <button type="button" class="btn btn-secondary btn-sm" id="connect-load-db-btn">Load Databases</button>
-                </div>
+                <!-- Database: 생성할 Database 이름 직접 입력 (MongoDB는 insert 시 자동 생성) -->
                 <div class="input-group mb-0" id="connect-database-group">
                     <span class="input-group-text rounded-start"><i class="bi bi-database-fill"></i></span>
                     <div class="form-floating">
-                        <select class="form-select rounded-end" id="connect-database">
-                            <option value="">- Select Database -</option>
-                        </select>
+                        <input type="text" class="form-control rounded-end" id="connect-database" placeholder="Database Name" autocomplete="off">
                         <label for="connect-database">Database Name</label>
                     </div>
                 </div>
@@ -384,7 +380,6 @@ document.addEventListener('DOMContentLoaded', function () {
         document.getElementById('connect-username-group')?.classList.toggle('d-none', gcp);
         document.getElementById('connect-username-help')?.classList.toggle('d-none', gcp);
         document.getElementById('connect-password-group')?.classList.toggle('d-none', gcp);
-        document.getElementById('connect-load-db-wrap')?.classList.toggle('d-none', gcp);
         document.getElementById('connect-database-group')?.classList.toggle('d-none', gcp);
     }
 
@@ -538,6 +533,7 @@ document.addEventListener('DOMContentLoaded', function () {
         updateCreateBtnLabel();
         // 공통 필드 초기화
         document.getElementById('gen-nosql-instanceId').value       = '';
+        clearInstanceIdInvalid();
         document.getElementById('gen-nosql-databaseId').value       = '';
         document.getElementById('gen-nosql-allocatedStorage').value = '20';
         document.getElementById('gen-nosql-username').value         = '';
@@ -858,10 +854,11 @@ document.addEventListener('DOMContentLoaded', function () {
         const inst = selectedInstance;
 
         document.getElementById('gen-nosql-instanceId').value = inst.instanceId;
+        clearInstanceIdInvalid();
         document.getElementById('connect-username').value     = '';
         document.getElementById('connect-username-error').classList.add('d-none');
         document.getElementById('connect-password').value     = '';
-        resetConnectDbSelect(); // 다른 인스턴스의 DB 목록이 남지 않도록 초기화
+        document.getElementById('connect-database').value      = ''; // 다른 인스턴스 값 잔존 방지
         document.getElementById('gen-nosql-databaseId').value = '';
         refreshUsernameHelpers();
 
@@ -885,6 +882,7 @@ document.addEventListener('DOMContentLoaded', function () {
         deleteInstanceBtn.disabled = true;
         resetSelect(engineVersionSelect, '-');
         document.getElementById('gen-nosql-instanceId').value       = '';
+        clearInstanceIdInvalid();
         document.getElementById('gen-nosql-databaseId').value       = '';
         document.getElementById('gen-nosql-allocatedStorage').value = '20';
         document.getElementById('gen-nosql-username').value         = '';
@@ -975,7 +973,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
         // GCP 생성 폼: Instance ID만 있으면 생성 가능 (Engine Version/Instance Class/Storage/계정 불필요).
         if (isSimpleCreateNoSQL()) {
-            actionBtn.disabled = !document.getElementById('gen-nosql-instanceId').value.trim();
+            actionBtn.disabled = !document.getElementById('gen-nosql-instanceId').value.trim() || isInstanceIdDup();
             actionBtn.textContent = 'Create';
             return;
         }
@@ -983,6 +981,7 @@ document.addEventListener('DOMContentLoaded', function () {
         const storageHidden = document.getElementById('storage-group').classList.contains('d-none');
         const storageOk  = storageHidden || (storageEl.value !== '' && Number(storageEl.value) >= (Number(storageEl.min) || 20));
         const ok = document.getElementById('gen-nosql-instanceId').value.trim()
+            && !isInstanceIdDup()
             && storageOk
             && isCreateUsernameValid()
             && isPasswordValid()
@@ -1052,7 +1051,23 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     });
 
-    document.getElementById('gen-nosql-instanceId').addEventListener('input', () => { updateButton(); saveState(); });
+    // 기존 인스턴스와 중복된 Instance ID인지 (생성 폼 검증)
+    function isInstanceIdDup() {
+        const v = document.getElementById('gen-nosql-instanceId').value.trim();
+        return !!v && allInstances.some(i => i.instanceId === v || i.name === v);
+    }
+    function clearInstanceIdInvalid() {
+        const el = document.getElementById('gen-nosql-instanceId');
+        el.classList.remove('is-invalid');
+        el.closest('.form-floating').classList.remove('is-invalid');
+    }
+    document.getElementById('gen-nosql-instanceId').addEventListener('input', function () {
+        const dup = isInstanceIdDup();
+        this.classList.toggle('is-invalid', dup);
+        this.closest('.form-floating').classList.toggle('is-invalid', dup);
+        updateButton();
+        saveState();
+    });
     document.getElementById('gen-nosql-databaseId').addEventListener('input', () => { updateButton(); });
     document.getElementById('gen-nosql-allocatedStorage').addEventListener('input', function () {
         const min     = Number(this.min) || 20;
@@ -1085,47 +1100,7 @@ document.addEventListener('DOMContentLoaded', function () {
     bindUsernameValidation('gen-nosql-username', 'gen-nosql-username-error');
     bindUsernameValidation('connect-username', 'connect-username-error');
     document.getElementById('connect-password').addEventListener('input', updateButton);
-    document.getElementById('connect-database').addEventListener('change', updateButton);
-
-    // ── Database 목록 (POST /db/nrdbms/databases) ──────────
-    // 선택한 인스턴스의 endpoint/port + 입력한 계정으로 서버의 실제 DB 목록을 조회해
-    // select box에 채운다 (mig-mysql의 rdbms/databases 패턴).
-    function resetConnectDbSelect() {
-        const sel = document.getElementById('connect-database');
-        sel.innerHTML = '<option value="">- Select Database -</option>';
-    }
-
-    document.getElementById('connect-load-db-btn').addEventListener('click', function () {
-        const inst     = selectedInstance;
-        const host     = (inst && inst.endpoint) || '';
-        const port     = (inst && inst.port) || '';
-        const username = document.getElementById('connect-username').value.trim();
-        const password = document.getElementById('connect-password').value;
-        if (!host || !port || !username || !password) {
-            alert('Please select an instance and enter Username and Password.');
-            return;
-        }
-        const btn = this;
-        btn.disabled = true;
-        btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
-        fetch('/db/nrdbms/databases', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ targetPoint: { provider: getProvider(), region: getRegion(), host, port, username, password, instanceId: inst.instanceId || '' } })
-        })
-        .then(r => r.ok ? r.json() : Promise.reject(r.status))
-        .then(json => {
-            resetConnectDbSelect();
-            const sel = document.getElementById('connect-database');
-            (Array.isArray(json) ? json : []).forEach(db => {
-                const opt = document.createElement('option');
-                opt.value = db; opt.textContent = db;
-                sel.appendChild(opt);
-            });
-            updateButton(); // DB 목록 초기화로 선택값이 비워졌으므로 버튼 상태 갱신
-        })
-        .catch(err => alert(`Failed to load databases: ${err}`))
-        .finally(() => { btn.disabled = false; btn.textContent = 'Load Databases'; });
-    });
+    document.getElementById('connect-database').addEventListener('input', updateButton);
 
     // ── Delete flow ──────────────────────────────────────
     const deleteConfirmModal = new bootstrap.Modal(document.getElementById('deleteConfirmModal'));
@@ -1317,6 +1292,7 @@ document.addEventListener('DOMContentLoaded', function () {
         resetSelect(engineVersionSelect, '-');
         icReset();
         document.getElementById('gen-nosql-instanceId').value       = '';
+        clearInstanceIdInvalid();
         document.getElementById('gen-nosql-databaseId').value       = '';
         document.getElementById('gen-nosql-allocatedStorage').value = '20';
         document.getElementById('gen-nosql-username').value         = '';
@@ -1548,6 +1524,7 @@ document.addEventListener('DOMContentLoaded', function () {
         icReset();
         sectionDb.classList.add('d-none');
         document.getElementById('gen-nosql-instanceId').value       = '';
+        clearInstanceIdInvalid();
         document.getElementById('gen-nosql-databaseId').value       = '';
         document.getElementById('gen-nosql-allocatedStorage').value = '20';
         document.getElementById('gen-nosql-username').value         = '';

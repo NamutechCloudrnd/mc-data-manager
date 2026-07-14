@@ -190,6 +190,7 @@
                         <input type="text" class="form-control rounded-end" id="gen-mysql-instanceId" autocomplete="off" name="instanceId" placeholder="Instance ID" required>
                         <label for="gen-mysql-instanceId">Instance ID</label>
                     </div>
+                    <div class="invalid-feedback ps-2">This instance ID already exists.</div>
                 </div>
                 <div class="input-group mb-3" id="storage-group">
                     <span class="input-group-text rounded-start"><i class="bi bi-archive-fill"></i></span>
@@ -535,6 +536,7 @@ document.addEventListener('DOMContentLoaded', function () {
         setCreationFieldsDisabled(false);
         document.getElementById('storage-group').classList.remove('d-none');
         document.getElementById('gen-mysql-instanceId').value        = '';
+        clearInstanceIdInvalid();
         document.getElementById('gen-mysql-allocatedStorage').value  = '20';
         document.getElementById('gen-mysql-username').value          = '';
         document.getElementById('gen-mysql-password').value          = '';
@@ -838,6 +840,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
         // Instance fields
         document.getElementById('gen-mysql-instanceId').value      = inst.instanceId;
+        clearInstanceIdInvalid();
         // 요구사항 1: 샘플데이터 생성 시 Username은 자동 채우지 않고 비운 채 사용자가 직접 입력.
         // provider 정책은 username-help(안내)로 표시, 오류는 API 응답 기반으로 표시.
         const unEl = document.getElementById('gen-mysql-username');
@@ -869,6 +872,7 @@ document.addEventListener('DOMContentLoaded', function () {
         resetSelect(engineSelect, '-');
         resetSelect(engineVersionSelect, '-');
         document.getElementById('gen-mysql-instanceId').value       = '';
+        clearInstanceIdInvalid();
         document.getElementById('gen-mysql-allocatedStorage').value  = '20';
         document.getElementById('gen-mysql-username').value          = '';
         document.getElementById('gen-mysql-password').value          = '';
@@ -925,6 +929,7 @@ document.addEventListener('DOMContentLoaded', function () {
         const storageMin = Number(storageEl.min) || 20;
         const storageOk  = storageEl.value !== '' && Number(storageEl.value) >= storageMin;
         const ok = document.getElementById('gen-mysql-instanceId').value.trim()
+            && !isInstanceIdDup()
             && storageOk
             && isUsernameValid()
             && isPasswordValid()
@@ -956,7 +961,23 @@ document.addEventListener('DOMContentLoaded', function () {
         document.getElementById('refresh-endpoint-btn').classList.toggle('d-none', !target);
     }
 
-    document.getElementById('gen-mysql-instanceId').addEventListener('input', () => { updateButton(); saveState(); });
+    // 기존 인스턴스와 중복된 Instance ID인지 (생성 폼 검증)
+    function isInstanceIdDup() {
+        const v = document.getElementById('gen-mysql-instanceId').value.trim();
+        return !!v && allInstances.some(i => i.instanceId === v || i.name === v);
+    }
+    function clearInstanceIdInvalid() {
+        const el = document.getElementById('gen-mysql-instanceId');
+        el.classList.remove('is-invalid');
+        el.closest('.form-floating').classList.remove('is-invalid');
+    }
+    document.getElementById('gen-mysql-instanceId').addEventListener('input', function () {
+        const dup = isInstanceIdDup();
+        this.classList.toggle('is-invalid', dup);
+        this.closest('.form-floating').classList.toggle('is-invalid', dup);
+        updateButton();
+        saveState();
+    });
     document.getElementById('gen-mysql-username').addEventListener('input', function () {
         // 확실한 클라이언트 규칙(gcp=root만, ncp/alibaba 금지어)은 입력 즉시 검증 메시지로 표시하고,
         // 규칙에 없는 예약어 등은 helper 안내 + 생성 시 API 응답으로 커버한다.
@@ -1151,6 +1172,7 @@ document.addEventListener('DOMContentLoaded', function () {
         resetSelect(engineVersionSelect, '-');
         icReset();
         document.getElementById('gen-mysql-instanceId').value       = '';
+        clearInstanceIdInvalid();
         document.getElementById('gen-mysql-allocatedStorage').value  = '20';
         document.getElementById('gen-mysql-username').value          = '';
         document.getElementById('gen-mysql-password').value          = '';
@@ -1429,6 +1451,7 @@ document.addEventListener('DOMContentLoaded', function () {
         icReset();
         sectionDb.classList.add('d-none');
         document.getElementById('gen-mysql-instanceId').value      = '';
+        clearInstanceIdInvalid();
         document.getElementById('gen-mysql-allocatedStorage').value = '20';
         document.getElementById('gen-mysql-username').value         = '';
         document.getElementById('gen-mysql-password').value         = '';

@@ -225,11 +225,13 @@
                         <div class="input-group mt-3">
                             <span class="input-group-text rounded-start"><i class="fa-solid fa-bucket"></i></span>
                             <div class="form-floating">
-                                <input type="text" class="form-control rounded-end" id="targetBucket" name="targetPoint[bucket]" placeholder="Bucket" autocomplete="off">
+                                <select class="form-select rounded-end" id="targetBucket" name="targetPoint[bucket]">
+                                    <option value="">- Select Bucket -</option>
+                                </select>
                                 <label for="targetBucket">Target Bucket</label>
                             </div>
                         </div>
-                        <div class="text-muted small ps-2 mt-1">Click a bucket in the list to select it, or type a new name to create it on submit.</div>
+                        <div class="text-muted small ps-2 mt-1">Click a bucket in the list or choose one from the dropdown. Use + Bucket to create a new one.</div>
                     </div>
                 </div>
             <button type="submit" class="btn btn-primary rounded-3 float-end" id="submitBtn">Submit</button>
