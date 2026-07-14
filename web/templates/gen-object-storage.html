@@ -261,25 +261,6 @@
 
 <script>
 document.addEventListener('DOMContentLoaded', function () {
-    // ────────────────────────────────────────────────────────────────
-    // [임시 코드 — 추후 삭제] workspace/namespace 고정 설정
-    //
-    // 운영 환경에서는 부모 창(MC-Web-Console iframe)이 postMessage로
-    // projectInfo.ns_id를 전달하고 scripts.js가 POST /namespace로 서버에
-    // 반영함. 단독 실행(로컬 개발) 시에는 이 메시지가 오지 않아 서버가
-    // 기본값 'ws01'(Tumblebug에 존재하지 않는 ns)을 사용하므로 버킷 목록
-    // 조회가 404로 실패함.
-    //
-    // 임시로 workspace 'ws01' / namespace 'default' 기준으로 nsId를
-    // 'default'로 강제 설정하여 버킷 목록 조회가 동작하도록 함.
-    // iframe 연동 환경에서만 사용하게 되면 이 블록 전체를 삭제할 것.
-    fetch('/namespace', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nsId: 'default' })
-    }).catch(err => console.warn('[임시] namespace 설정 실패:', err));
-    // ──────────────────────────────────────────────── [임시 코드 끝] ──
-
     const PAGE_SIZE = 10;
 
     // Target Bucket 필드와 Submit 버튼을 데이터 선택 카드(gen-data.html이 렌더링하는 .card.p-3)
