@@ -88,11 +88,11 @@
                     <table class="table table-bordered table-sm mb-0">
                         <thead>
                             <tr>
-                                <th>ID</th><th>Name</th><th>Status</th><th>Version</th><th>Host</th><th>Port</th>
+                                <th style="width:36px;"></th><th>ID</th><th>Name</th><th>Status</th><th>Version</th><th>Host</th><th>Port</th>
                             </tr>
                         </thead>
                         <tbody id="src-nrdb-table-body">
-                            <tr><td colspan="6" class="text-center text-muted small py-3">Select a credential and region to list instances</td></tr>
+                            <tr><td colspan="7" class="text-center text-muted small py-3">Select a credential and region to list instances</td></tr>
                         </tbody>
                     </table>
                     <div id="src-nrdb-pagination" class="mt-2 mb-3"></div>
@@ -244,11 +244,11 @@
                     <table class="table table-bordered table-sm mb-0">
                         <thead>
                             <tr>
-                                <th>ID</th><th>Name</th><th>Status</th><th>Version</th><th>Host</th><th>Port</th>
+                                <th style="width:36px;"></th><th>ID</th><th>Name</th><th>Status</th><th>Version</th><th>Host</th><th>Port</th>
                             </tr>
                         </thead>
                         <tbody id="tgt-nrdb-table-body">
-                            <tr><td colspan="6" class="text-center text-muted small py-3">Select a credential and region to list instances</td></tr>
+                            <tr><td colspan="7" class="text-center text-muted small py-3">Select a credential and region to list instances</td></tr>
                         </tbody>
                     </table>
                     <div id="tgt-nrdb-pagination" class="mt-2 mb-3"></div>
@@ -337,7 +337,7 @@
     </div>
 </div>
 
-{{ template "db-instance-panel.html" . }}
+{{ template "instance-panel.html" . }}
 {{ template "sample-data-panel.html" . }}
 
 <style>
@@ -422,6 +422,7 @@ document.addEventListener('DOMContentLoaded', function () {
                         data-port="${inst.port || ''}"
                         data-name="${inst.name || iid}"
                         data-available="${available ? '1' : '0'}">
+                    <td class="text-center align-middle"><input type="checkbox" class="form-check-input row-select"${isSel ? ' checked' : ''}></td>
                     <td class="small">${iid || '-'}</td>
                     <td class="small">${inst.name || '-'}</td>
                     <td>${nrdbStatusBadge(inst.status)}</td>
@@ -458,7 +459,7 @@ document.addEventListener('DOMContentLoaded', function () {
             const tbody = document.getElementById(cfg.tbodyId);
             tbody.innerHTML = pageRows.length
                 ? pageRows.map(makeRow).join('')
-                : '<tr><td colspan="6" class="text-center text-muted small py-3">No instances found</td></tr>';
+                : '<tr><td colspan="7" class="text-center text-muted small py-3">No instances found</td></tr>';
             tbody.querySelectorAll('tr.' + rowClass()).forEach(row => {
                 row.addEventListener('click', () => onRowClick(row));
             });
@@ -607,7 +608,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 body: JSON.stringify({ provider, region })
             })
             .then(r => r.ok ? r.json() : Promise.reject(r.status))
-            .then(json => { allRows = json || []; render(); scheduleTransitionalPoll(); })
+            .then(json => { allRows = json || []; render(); dbiPanel.refreshButtons(); scheduleTransitionalPoll(); })
             .catch(() => { scheduleTransitionalPoll(); });
         }
 
@@ -627,7 +628,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 allRows = []; page = 1; render(); stopTransitionalPoll();
                 return;
             }
-            tbody.innerHTML = '<tr><td colspan="6" class="text-center py-3"><span class="spinner-border spinner-border-sm"></span></td></tr>';
+            tbody.innerHTML = '<tr><td colspan="7" class="text-center py-3"><span class="spinner-border spinner-border-sm"></span></td></tr>';
             fetch('/db/nrdbms', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ provider, region })
@@ -637,9 +638,9 @@ document.addEventListener('DOMContentLoaded', function () {
             .catch(err => { console.error('load nrdb:', err); allRows = []; page = 1; render(); stopTransitionalPoll(); });
         }
 
-        // ── 인스턴스 생성/삭제 + 샘플데이터 생성 (DBInstancePanel/SamplePanel 공용 컴포넌트) ──
+        // ── 인스턴스 생성/삭제 + 샘플데이터 생성 (InstancePanel/SamplePanel 공용 컴포넌트) ──
         // 인스턴스 선택 시 '+ Instance' 버튼이 '+ Sample Data'로 전환된다 (gen-no-sql과 동일 UX).
-        const dbiPanel = DBInstancePanel.init({
+        const dbiPanel = InstancePanel.init({
             kind: 'nrdbms',
             getProvider: () => providerOf(cfg.point),
             getRegion: () => regionOf(cfg.point),

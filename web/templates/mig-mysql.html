@@ -127,7 +127,7 @@
                                     <table class="table table-bordered table-sm mb-0">
                                         <thead>
                                             <tr>
-                                                <th>ID</th>
+                                                <th style="width:36px;"></th><th>ID</th>
                                                 <th>Name</th>
                                                 <th>Status</th>
                                                 <th>Version</th>
@@ -137,7 +137,7 @@
                                             </tr>
                                         </thead>
                                         <tbody id="src-rdbms-table-body">
-                                            <tr><td colspan="7" class="text-center text-muted small py-3">Select a credential and region to list instances</td></tr>
+                                            <tr><td colspan="8" class="text-center text-muted small py-3">Select a credential and region to list instances</td></tr>
                                         </tbody>
                                     </table>
                                     <div id="src-rdbms-pagination" class="mt-2 mb-3"></div>
@@ -401,7 +401,7 @@
                                     <table class="table table-bordered table-sm mb-0">
                                         <thead>
                                             <tr>
-                                                <th>ID</th>
+                                                <th style="width:36px;"></th><th>ID</th>
                                                 <th>Name</th>
                                                 <th>Status</th>
                                                 <th>Version</th>
@@ -411,7 +411,7 @@
                                             </tr>
                                         </thead>
                                         <tbody id="tgt-rdbms-table-body">
-                                            <tr><td colspan="7" class="text-center text-muted small py-3">Select a credential and region to list instances</td></tr>
+                                            <tr><td colspan="8" class="text-center text-muted small py-3">Select a credential and region to list instances</td></tr>
                                         </tbody>
                                     </table>
                                     <div id="tgt-rdbms-pagination" class="mt-2 mb-3"></div>
@@ -692,7 +692,7 @@
     </div>
 </div>
 
-{{ template "db-instance-panel.html" . }}
+{{ template "instance-panel.html" . }}
 {{ template "sample-data-panel.html" . }}
 
 <style>
@@ -1148,6 +1148,7 @@
                     data-port="${inst.port || ''}"
                     data-name="${inst.name || inst.instanceId || ''}"
                     data-available="${available ? '1' : '0'}">
+                    <td class="text-center align-middle"><input type="checkbox" class="form-check-input row-select"${isSelected ? ' checked' : ''}></td>
                     <td class="small">${inst.instanceId || '-'}</td>
                     <td class="small">${inst.name || '-'}</td>
                     <td>${srcRdbmsStatusBadge(inst.status)}</td>
@@ -1185,7 +1186,7 @@
         const tbody = document.getElementById('src-rdbms-table-body');
         tbody.innerHTML = page.length
             ? page.map(makeSrcRdbmsRow).join('')
-            : '<tr><td colspan="7" class="text-center text-muted small py-3">No instances found</td></tr>';
+            : '<tr><td colspan="8" class="text-center text-muted small py-3">No instances found</td></tr>';
         tbody.querySelectorAll('.src-rdbms-row').forEach(row => {
             row.addEventListener('click', () => onSrcRdbmsRowClick(row));
         });
@@ -1289,7 +1290,7 @@
         if (!provider || provider === 'none' || !region || region === 'none') return;
 
         const tbody = document.getElementById('src-rdbms-table-body');
-        tbody.innerHTML = '<tr><td colspan="7" class="text-center py-3"><span class="spinner-border spinner-border-sm"></span></td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" class="text-center py-3"><span class="spinner-border spinner-border-sm"></span></td></tr>';
         document.getElementById('src-rdbms-connect-section').style.display = 'none';
         document.getElementById('src-rdbms-db-section').style.display = 'none';
         selectedSrcInstance = null;
@@ -1380,6 +1381,7 @@
                     data-port="${inst.port || ''}"
                     data-name="${inst.name || inst.instanceId || ''}"
                     data-available="${available ? '1' : '0'}">
+                    <td class="text-center align-middle"><input type="checkbox" class="form-check-input row-select"${isSelected ? ' checked' : ''}></td>
                     <td class="small">${inst.instanceId || '-'}</td>
                     <td class="small">${inst.name || '-'}</td>
                     <td>${srcRdbmsStatusBadge(inst.status)}</td>
@@ -1417,7 +1419,7 @@
         const tbody = document.getElementById('tgt-rdbms-table-body');
         tbody.innerHTML = page.length
             ? page.map(makeTgtRdbmsRow).join('')
-            : '<tr><td colspan="7" class="text-center text-muted small py-3">No instances found</td></tr>';
+            : '<tr><td colspan="8" class="text-center text-muted small py-3">No instances found</td></tr>';
         tbody.querySelectorAll('.tgt-rdbms-row').forEach(row => {
             row.addEventListener('click', () => onTgtRdbmsRowClick(row));
         });
@@ -1451,7 +1453,7 @@
         if (!provider || provider === 'none' || !region || region === 'none') return;
 
         const tbody = document.getElementById('tgt-rdbms-table-body');
-        tbody.innerHTML = '<tr><td colspan="7" class="text-center py-3"><span class="spinner-border spinner-border-sm"></span></td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" class="text-center py-3"><span class="spinner-border spinner-border-sm"></span></td></tr>';
         selectedTgtInstance = null;
 
         fetch('/db/rdbms', {
@@ -1499,13 +1501,13 @@
         srcProviderHidden.addEventListener('change', () => setTimeout(loadSrcRdbmsTable, 0));
     }
 
-    // ── 인스턴스 생성/삭제 + 샘플데이터 생성 (DBInstancePanel/SamplePanel 공용 컴포넌트) ──
-    // DBInstancePanel은 scripts.js(footer 로드)에 정의되므로 인라인 최상위에서 호출하면
-    // "DBInstancePanel is not defined"로 이후 코드 전체가 죽는다 → DOMContentLoaded에서 초기화.
+    // ── 인스턴스 생성/삭제 + 샘플데이터 생성 (InstancePanel/SamplePanel 공용 컴포넌트) ──
+    // InstancePanel은 scripts.js(footer 로드)에 정의되므로 인라인 최상위에서 호출하면
+    // "InstancePanel is not defined"로 이후 코드 전체가 죽는다 → DOMContentLoaded에서 초기화.
     let srcDbiPanel = null;
     let tgtDbiPanel = null;
     document.addEventListener('DOMContentLoaded', () => {
-    srcDbiPanel = DBInstancePanel.init({
+    srcDbiPanel = InstancePanel.init({
         kind: 'rdbms',
         getProvider: () => document.getElementById('sourcePoint[provider]')?.value || '',
         getRegion: getSrcRegion,
@@ -1531,7 +1533,7 @@
             renderSrcRdbmsTable();
         },
     });
-    tgtDbiPanel = DBInstancePanel.init({
+    tgtDbiPanel = InstancePanel.init({
         kind: 'rdbms',
         getProvider: () => document.getElementById('targetPoint[provider]')?.value || '',
         getRegion: getTgtRegion,
@@ -1563,7 +1565,7 @@
     ['targetRegionSelect', 'targetCredentialSelect'].forEach(id =>
         document.getElementById(id)?.addEventListener('change', () => setTimeout(() => tgtDbiPanel.refreshButtons(), 0)));
     tgtProviderHidden?.addEventListener('change', () => setTimeout(() => tgtDbiPanel.refreshButtons(), 0));
-    }); // DOMContentLoaded (DBInstancePanel/SamplePanel 초기화)
+    }); // DOMContentLoaded (InstancePanel/SamplePanel 초기화)
 
     // 행 선택 시 Region 셀렉트를 인스턴스의 region과 대소문자 무시로 동기화 (auto-select).
     // change는 dispatch하지 않는다 — 목록 리로드로 방금 한 선택이 풀리는 것을 방지.
