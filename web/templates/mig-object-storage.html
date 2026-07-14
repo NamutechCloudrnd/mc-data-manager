@@ -107,6 +107,7 @@
                     <table class="table table-bordered table-sm mb-0">
                         <thead>
                             <tr>
+                                <th style="width:36px;"></th>
                                 <th>Resource ID</th>
                                 <th>Name</th>
                                 <th>Region</th>
@@ -116,18 +117,20 @@
                             </tr>
                         </thead>
                         <tbody id="src-bkt-body">
-                            <tr><td colspan="6" class="text-center text-muted small py-3">Select a credential to list buckets</td></tr>
+                            <tr><td colspan="7" class="text-center text-muted small py-3">Select a credential to list buckets</td></tr>
                         </tbody>
                     </table>
                     <div id="src-bkt-pagination" class="mt-2"></div>
                     <div class="input-group mt-3">
                         <span class="input-group-text rounded-start"><i class="fa-solid fa-bucket"></i></span>
                         <div class="form-floating">
-                            <input type="text" class="form-control rounded-end" id="sourceBucket" name="sourcePoint[bucket]" placeholder="Bucket" readonly>
+                            <select class="form-select rounded-end" id="sourceBucket" name="sourcePoint[bucket]">
+                                <option value="">- Select Bucket -</option>
+                            </select>
                             <label for="sourceBucket">Source Bucket</label>
                         </div>
                     </div>
-                    <div class="text-muted small ps-2 mt-1 mb-2">Click a bucket in the list to select it.</div>
+                    <div class="text-muted small ps-2 mt-1 mb-2">Click a bucket in the list or choose one from the dropdown.</div>
                     {{ template "filter.html" . }}
                 </div>
                 <div class="card rounded-3 mb-3 p-3">
@@ -209,6 +212,7 @@
                         <table class="table table-bordered table-sm mb-0">
                             <thead>
                                 <tr>
+                                    <th style="width:36px;"></th>
                                     <th>Resource ID</th>
                                     <th>Name</th>
                                     <th>Region</th>
@@ -218,7 +222,7 @@
                                 </tr>
                             </thead>
                             <tbody id="tgt-bkt-body">
-                                <tr><td colspan="6" class="text-center text-muted small py-3">Select a credential to list buckets</td></tr>
+                                <tr><td colspan="7" class="text-center text-muted small py-3">Select a credential to list buckets</td></tr>
                             </tbody>
                         </table>
                         <div id="tgt-bkt-pagination" class="mt-2"></div>

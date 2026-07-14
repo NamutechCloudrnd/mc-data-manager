@@ -107,6 +107,7 @@
                     <table class="table table-bordered table-sm mb-0">
                         <thead>
                             <tr>
+                                <th style="width:36px;"></th>
                                 <th>Resource ID</th>
                                 <th>Name</th>
                                 <th>Region</th>
@@ -116,18 +117,20 @@
                             </tr>
                         </thead>
                         <tbody id="bak-bkt-body">
-                            <tr><td colspan="6" class="text-center text-muted small py-3">Select a credential to list buckets</td></tr>
+                            <tr><td colspan="7" class="text-center text-muted small py-3">Select a credential to list buckets</td></tr>
                         </tbody>
                     </table>
                     <div id="bak-bkt-pagination" class="mt-2"></div>
                     <div class="input-group mt-3">
                         <span class="input-group-text rounded-start"><i class="fa-solid fa-bucket"></i></span>
                         <div class="form-floating">
-                            <input type="text" class="form-control rounded-end" id="sourceBucket" name="sourcePoint[bucket]" placeholder="Bucket" readonly>
+                            <select class="form-select rounded-end" id="sourceBucket" name="sourcePoint[bucket]">
+                                <option value="">- Select Bucket -</option>
+                            </select>
                             <label for="sourceBucket">Source Bucket</label>
                         </div>
                     </div>
-                    <div class="text-muted small ps-2 mt-1 mb-2">Click a bucket in the list to select it.</div>
+                    <div class="text-muted small ps-2 mt-1 mb-2">Click a bucket in the list or choose one from the dropdown.</div>
                     {{ template "filter.html" . }}
                 </div>
                 <div class="form-section" id="rdbms" style="display:none;">
@@ -150,7 +153,7 @@
                     <table class="table table-bordered table-sm mb-0">
                         <thead>
                             <tr>
-                                <th>ID</th>
+                                <th style="width:36px;"></th><th>ID</th>
                                 <th>Name</th>
                                 <th>Status</th>
                                 <th>Version</th>
@@ -160,7 +163,7 @@
                             </tr>
                         </thead>
                         <tbody id="rdbms-table-body">
-                            <tr><td colspan="7" class="text-center text-muted small py-3">Select a credential and region to list instances</td></tr>
+                            <tr><td colspan="8" class="text-center text-muted small py-3">Select a credential and region to list instances</td></tr>
                         </tbody>
                     </table>
                     <div id="rdbms-pagination" class="mt-2"></div>
@@ -237,10 +240,10 @@
                         </div>
                         <table class="table table-bordered table-sm mb-0">
                             <thead>
-                                <tr><th>ID</th><th>Name</th><th>Status</th><th>Version</th><th>Host</th><th>Port</th></tr>
+                                <tr><th style="width:36px;"></th><th>ID</th><th>Name</th><th>Status</th><th>Version</th><th>Host</th><th>Port</th></tr>
                             </thead>
                             <tbody id="nrdbms-table-body">
-                                <tr><td colspan="6" class="text-center text-muted small py-3">Select a credential and region to list instances</td></tr>
+                                <tr><td colspan="7" class="text-center text-muted small py-3">Select a credential and region to list instances</td></tr>
                             </tbody>
                         </table>
                         <div id="nrdbms-pagination" class="mt-2"></div>
@@ -344,7 +347,7 @@
 </div>
 
 {{ template "bucket-panel.html" . }}
-{{ template "db-instance-panel.html" . }}
+{{ template "instance-panel.html" . }}
 {{ template "sample-data-panel.html" . }}
 
 <style>
@@ -528,7 +531,7 @@ const source = {
     // BucketPanel은 scripts.js(footer 로드)에 정의되므로 인라인 최상위에서 호출하면
     // 아직 미정의(ReferenceError) → 반드시 DOMContentLoaded 이후에 초기화한다.
     let bakPanel = null;
-    let bakRdbmsDbiPanel = null; // SQL 인스턴스 생성/삭제 (DBInstancePanel 공용 컴포넌트)
+    let bakRdbmsDbiPanel = null; // SQL 인스턴스 생성/삭제 (InstancePanel 공용 컴포넌트)
     let bakNrdbDbiPanel = null;  // NoSQL 인스턴스 생성/삭제 (동일 컴포넌트, kind='nrdbms')
     document.addEventListener("DOMContentLoaded", () => {
         bakPanel = BucketPanel.init({
@@ -541,7 +544,7 @@ const source = {
             deleteBtn: document.getElementById('deleteInstanceBtn'),
             createBtn: document.getElementById('bak-bkt-createBtn'),
         });
-        bakRdbmsDbiPanel = DBInstancePanel.init({
+        bakRdbmsDbiPanel = InstancePanel.init({
             kind: 'rdbms',
             getProvider: () => source.provider.value || '',
             getRegion: getSourceRegion,
@@ -561,7 +564,7 @@ const source = {
                 renderSrcRdbmsTable();
             },
         });
-        bakNrdbDbiPanel = DBInstancePanel.init({
+        bakNrdbDbiPanel = InstancePanel.init({
             kind: 'nrdbms',
             getProvider: () => source.provider.value || '',
             getRegion: getSourceRegion,
@@ -707,6 +710,7 @@ const source = {
                     data-port="${inst.port || ''}"
                     data-name="${inst.name || inst.instanceId || ''}"
                     data-available="${available ? '1' : '0'}">
+                    <td class="text-center align-middle"><input type="checkbox" class="form-check-input row-select"${isSelected ? ' checked' : ''}></td>
                     <td class="small">${inst.instanceId || '-'}</td>
                     <td class="small">${inst.name || '-'}</td>
                     <td>${rdbmsStatusBadge(inst.status)}</td>
@@ -744,7 +748,7 @@ const source = {
         const tbody = document.getElementById('rdbms-table-body');
         tbody.innerHTML = page.length
             ? page.map(makeSrcRdbmsRow).join('')
-            : '<tr><td colspan="7" class="text-center text-muted small py-3">No instances found</td></tr>';
+            : '<tr><td colspan="8" class="text-center text-muted small py-3">No instances found</td></tr>';
         tbody.querySelectorAll('.src-rdbms-row').forEach(row => {
             row.addEventListener('click', () => onSrcRdbmsRowClick(row));
         });
@@ -799,7 +803,7 @@ const source = {
         srcRdbmsAllRows = []; srcRdbmsPage = 1;
         selectedSrcInstance = null;
         document.getElementById('rdbms-table-body').innerHTML =
-            '<tr><td colspan="7" class="text-center text-muted small py-3">Select a credential and region to list instances</td></tr>';
+            '<tr><td colspan="8" class="text-center text-muted small py-3">Select a credential and region to list instances</td></tr>';
         document.getElementById('rdbms-pagination').innerHTML = '';
         document.getElementById('rdbms-connect-section').style.display = 'none';
         document.getElementById('rdbms-db-section').style.display = 'none';
@@ -816,7 +820,7 @@ const source = {
         if (!provider || provider === 'none' || !region || region === 'none') return;
 
         const tbody = document.getElementById('rdbms-table-body');
-        tbody.innerHTML = '<tr><td colspan="7" class="text-center py-3"><span class="spinner-border spinner-border-sm"></span></td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" class="text-center py-3"><span class="spinner-border spinner-border-sm"></span></td></tr>';
         document.getElementById('rdbms-connect-section').style.display = 'none';
         document.getElementById('rdbms-db-section').style.display = 'none';
 
@@ -905,7 +909,7 @@ const source = {
             body: JSON.stringify({ provider, region })
         })
         .then(r => r.ok ? r.json() : Promise.reject(r.status))
-        .then(json => { nrdbAllRows = json || []; renderNrdbTable(); scheduleNrdbPoll(); })
+        .then(json => { nrdbAllRows = json || []; renderNrdbTable(); bakNrdbDbiPanel?.refreshButtons(); scheduleNrdbPoll(); })
         .catch(() => { scheduleNrdbPoll(); });
     }
 
@@ -919,6 +923,7 @@ const source = {
                     data-port="${inst.port || ''}"
                     data-name="${inst.name || iid}"
                     data-available="${available ? '1' : '0'}">
+                    <td class="text-center align-middle"><input type="checkbox" class="form-check-input row-select"${isSelected ? ' checked' : ''}></td>
                     <td class="small">${iid || '-'}</td>
                     <td class="small">${inst.name || '-'}</td>
                     <td>${rdbmsStatusBadge(inst.status)}</td>
@@ -955,7 +960,7 @@ const source = {
         const tbody = document.getElementById('nrdbms-table-body');
         tbody.innerHTML = page.length
             ? page.map(makeNrdbRow).join('')
-            : '<tr><td colspan="6" class="text-center text-muted small py-3">No instances found</td></tr>';
+            : '<tr><td colspan="7" class="text-center text-muted small py-3">No instances found</td></tr>';
         tbody.querySelectorAll('.src-nrdb-row').forEach(row => {
             row.addEventListener('click', () => onNrdbRowClick(row));
         });
@@ -1067,7 +1072,7 @@ const source = {
         selectedNrdbInstance = null;
         stopNrdbPoll();
         document.getElementById('nrdbms-table-body').innerHTML =
-            '<tr><td colspan="6" class="text-center text-muted small py-3">Select a credential and region to list instances</td></tr>';
+            '<tr><td colspan="7" class="text-center text-muted small py-3">Select a credential and region to list instances</td></tr>';
         document.getElementById('nrdbms-pagination').innerHTML = '';
         document.getElementById('nrdbms-connect-section').style.display = 'none';
         document.getElementById('nrdbms-gcp-instanceId').value = '';
@@ -1085,7 +1090,7 @@ const source = {
         if (!provider || provider === 'none' || !region || region === 'none') { stopNrdbPoll(); return; }
 
         const tbody = document.getElementById('nrdbms-table-body');
-        tbody.innerHTML = '<tr><td colspan="6" class="text-center py-3"><span class="spinner-border spinner-border-sm"></span></td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center py-3"><span class="spinner-border spinner-border-sm"></span></td></tr>';
         document.getElementById('nrdbms-connect-section').style.display = 'none';
         selectedNrdbInstance = null;
 

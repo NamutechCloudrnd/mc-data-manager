@@ -123,6 +123,7 @@
                     <table class="table table-bordered table-sm mb-0">
                         <thead>
                             <tr>
+                                <th style="width:36px;"></th>
                                 <th>Resource ID</th>
                                 <th>Name</th>
                                 <th>Region</th>
@@ -132,7 +133,7 @@
                             </tr>
                         </thead>
                         <tbody id="res-bkt-body">
-                            <tr><td colspan="6" class="text-center text-muted small py-3">Select a credential to list buckets</td></tr>
+                            <tr><td colspan="7" class="text-center text-muted small py-3">Select a credential to list buckets</td></tr>
                         </tbody>
                     </table>
                     <div id="res-bkt-pagination" class="mt-2"></div>
@@ -166,7 +167,7 @@
                     <table class="table table-bordered table-sm mb-0">
                         <thead>
                             <tr>
-                                <th>ID</th>
+                                <th style="width:36px;"></th><th>ID</th>
                                 <th>Name</th>
                                 <th>Status</th>
                                 <th>Version</th>
@@ -176,7 +177,7 @@
                             </tr>
                         </thead>
                         <tbody id="restore-rdbms-table-body">
-                            <tr><td colspan="7" class="text-center text-muted small py-3">Select a credential and region to list instances</td></tr>
+                            <tr><td colspan="8" class="text-center text-muted small py-3">Select a credential and region to list instances</td></tr>
                         </tbody>
                     </table>
                     <div id="restore-rdbms-pagination" class="mt-2"></div>
@@ -235,10 +236,10 @@
                         </div>
                         <table class="table table-bordered table-sm mb-0">
                             <thead>
-                                <tr><th>ID</th><th>Name</th><th>Status</th><th>Version</th><th>Host</th><th>Port</th></tr>
+                                <tr><th style="width:36px;"></th><th>ID</th><th>Name</th><th>Status</th><th>Version</th><th>Host</th><th>Port</th></tr>
                             </thead>
                             <tbody id="restore-nrdb-table-body">
-                                <tr><td colspan="6" class="text-center text-muted small py-3">Select a credential and region to list instances</td></tr>
+                                <tr><td colspan="7" class="text-center text-muted small py-3">Select a credential and region to list instances</td></tr>
                             </tbody>
                         </table>
                         <div id="restore-nrdb-pagination" class="mt-2"></div>
@@ -326,7 +327,7 @@
 </div>
 
 {{ template "bucket-panel.html" . }}
-{{ template "db-instance-panel.html" . }}
+{{ template "instance-panel.html" . }}
 {{ template "sample-data-panel.html" . }}
 
 <style>
@@ -349,7 +350,7 @@ const target = {
     // BucketPanel은 scripts.js(footer 로드)에 정의되므로 인라인 최상위에서 호출하면
     // 아직 미정의(ReferenceError) → 반드시 DOMContentLoaded 이후에 초기화한다.
     let resPanel = null;
-    let resRdbmsDbiPanel = null; // SQL 인스턴스 생성/삭제 (DBInstancePanel 공용 컴포넌트)
+    let resRdbmsDbiPanel = null; // SQL 인스턴스 생성/삭제 (InstancePanel 공용 컴포넌트)
     let resNrdbDbiPanel = null;  // NoSQL 인스턴스 생성/삭제 (동일 컴포넌트, kind='nrdbms')
     document.addEventListener("DOMContentLoaded", () => {
         resPanel = BucketPanel.init({
@@ -362,7 +363,7 @@ const target = {
             deleteBtn: document.getElementById('deleteInstanceBtn'),
             createBtn: document.getElementById('res-bkt-createBtn'),
         });
-        resRdbmsDbiPanel = DBInstancePanel.init({
+        resRdbmsDbiPanel = InstancePanel.init({
             kind: 'rdbms',
             getProvider: () => target.provider.value || '',
             getRegion: getTargetRegion,
@@ -382,7 +383,7 @@ const target = {
                 renderRestoreRdbmsTable();
             },
         });
-        resNrdbDbiPanel = DBInstancePanel.init({
+        resNrdbDbiPanel = InstancePanel.init({
             kind: 'nrdbms',
             getProvider: () => target.provider.value || '',
             getRegion: getTargetRegion,
@@ -645,6 +646,7 @@ const target = {
                     data-port="${inst.port || ''}"
                     data-name="${inst.name || inst.instanceId || ''}"
                     data-available="${available ? '1' : '0'}">
+                    <td class="text-center align-middle"><input type="checkbox" class="form-check-input row-select"${isSelected ? ' checked' : ''}></td>
                     <td class="small">${inst.instanceId || '-'}</td>
                     <td class="small">${inst.name || '-'}</td>
                     <td>${rdbmsStatusBadge(inst.status)}</td>
@@ -693,7 +695,7 @@ const target = {
         if (restoreRdbmsPage > totalPages) restoreRdbmsPage = totalPages;
 
         if (!filtered.length) {
-            tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted small py-3">No instances found</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted small py-3">No instances found</td></tr>';
             renderRestoreRdbmsPagination(0);
             return;
         }
@@ -757,7 +759,7 @@ const target = {
         if (!provider || provider === 'none' || !region || region === 'none') return;
 
         const tbody = document.getElementById('restore-rdbms-table-body');
-        if (tbody) tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted small py-3"><span class="spinner-border spinner-border-sm me-2"></span>Loading...</td></tr>';
+        if (tbody) tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted small py-3"><span class="spinner-border spinner-border-sm me-2"></span>Loading...</td></tr>';
         selectedRestoreInstance = null;
         document.getElementById('restore-rdbms-connect').style.display = 'none';
         document.getElementById('mysql-srcHost').value = '';
@@ -804,7 +806,7 @@ const target = {
             body: JSON.stringify({ provider, region })
         })
         .then(r => r.ok ? r.json() : Promise.reject(r.status))
-        .then(json => { restoreNrdbAllRows = json || []; renderRestoreNrdbTable(); scheduleRestoreNrdbPoll(); })
+        .then(json => { restoreNrdbAllRows = json || []; renderRestoreNrdbTable(); resNrdbDbiPanel?.refreshButtons(); scheduleRestoreNrdbPoll(); })
         .catch(() => { scheduleRestoreNrdbPoll(); });
     }
 
@@ -818,6 +820,7 @@ const target = {
                     data-port="${inst.port || ''}"
                     data-name="${inst.name || iid}"
                     data-available="${available ? '1' : '0'}">
+                    <td class="text-center align-middle"><input type="checkbox" class="form-check-input row-select"${isSelected ? ' checked' : ''}></td>
                     <td class="small">${iid || '-'}</td>
                     <td class="small">${inst.name || '-'}</td>
                     <td>${rdbmsStatusBadge(inst.status)}</td>
@@ -857,7 +860,7 @@ const target = {
         const totalPages = Math.max(1, Math.ceil(filtered.length / RESTORE_PAGE_SIZE));
         if (restoreNrdbPage > totalPages) restoreNrdbPage = totalPages;
         if (!filtered.length) {
-            tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted small py-3">No instances found</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted small py-3">No instances found</td></tr>';
             renderRestoreNrdbPagination(1);
             return;
         }
@@ -973,7 +976,7 @@ const target = {
         selectedRestoreNrdbInstance = null;
         stopRestoreNrdbPoll();
         const tbody = document.getElementById('restore-nrdb-table-body');
-        if (tbody) tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted small py-3">Select a credential and region to list instances</td></tr>';
+        if (tbody) tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted small py-3">Select a credential and region to list instances</td></tr>';
         document.getElementById('restore-nrdb-pagination').innerHTML = '';
         document.getElementById('restore-nrdb-connect').style.display = 'none';
         document.getElementById('restore-nrdb-gcp-instanceId').value = '';
@@ -991,7 +994,7 @@ const target = {
         if (!provider || provider === 'none' || !region || region === 'none') { stopRestoreNrdbPoll(); return; }
 
         const tbody = document.getElementById('restore-nrdb-table-body');
-        if (tbody) tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted small py-3"><span class="spinner-border spinner-border-sm me-2"></span>Loading...</td></tr>';
+        if (tbody) tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted small py-3"><span class="spinner-border spinner-border-sm me-2"></span>Loading...</td></tr>';
         selectedRestoreNrdbInstance = null;
         document.getElementById('restore-nrdb-connect').style.display = 'none';
 

@@ -1284,6 +1284,22 @@ function getServiceName(service, provider) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 목록 행 선택 체크박스(.row-select) 전역 동기화
+//
+// 모든 Bucket/Instance 목록의 선택 상태는 tr의 'table-active' 클래스로 표현된다.
+// 체크박스는 pointer-events:none(styles.css)이라 클릭이 행으로 통과해 기존
+// 행 클릭 핸들러가 선택을 처리하고, 여기서 클래스 변경을 관찰해 checked만 맞춘다.
+// → 페이지별 동기화 코드 없이 단일 선택/자동 해제/재렌더가 항상 일치.
+// ─────────────────────────────────────────────────────────────────────────────
+new MutationObserver(muts => {
+    muts.forEach(m => {
+        if (m.target.tagName !== 'TR') return;
+        const cb = m.target.querySelector('.row-select');
+        if (cb) cb.checked = m.target.classList.contains('table-active');
+    });
+}).observe(document.body, { subtree: true, attributes: true, attributeFilter: ['class'] });
+
+// ─────────────────────────────────────────────────────────────────────────────
 // BucketPanel — Object Storage 버킷 목록/탐색 공용 컴포넌트
 //
 // gen-object-storage.html의 버킷 테이블 + 가상 폴더 탐색 + 삭제 기능을
@@ -1413,30 +1429,28 @@ const BucketPanel = (() => {
             pagination: document.getElementById('bkt-object-pagination'),
             deleteModal: new bootstrap.Modal(document.getElementById('bktDeleteModal')),
             objDeleteModal: new bootstrap.Modal(document.getElementById('bktObjectDeleteModal')),
-            // 생성 모달은 구버전 파셜(모달 없음)과의 호환을 위해 존재할 때만 배선
-            createModal: document.getElementById('bktCreateModal')
-                ? new bootstrap.Modal(document.getElementById('bktCreateModal')) : null,
+            // 생성/탐색 2모드 (gen-object-storage와 동일 구조)
+            context: document.getElementById('bkt-oc-context'),
+            sectionCreate: document.getElementById('bkt-section-create'),
+            sectionObjects: document.getElementById('bkt-section-objects'),
+            createInput: document.getElementById('bkt-create-input'),
+            createConfirm: document.getElementById('bkt-create-confirm'),
         };
-        if (ocRefs.createModal) {
-            document.getElementById('bktCreateModal').addEventListener('show.bs.modal', () => {
-                document.getElementById('bkt-create-input').value = '';
-                document.getElementById('bkt-create-input').classList.remove('is-invalid');
-                document.getElementById('bkt-create-error').classList.add('d-none');
-                document.getElementById('bkt-create-confirm').disabled = true;
-            });
-            document.getElementById('bkt-create-input').addEventListener('input', function () {
+        if (ocRefs.sectionCreate) {
+            ocRefs.createInput.addEventListener('input', function () {
                 const name = this.value.trim();
                 let msg = bucketNameError(name);
                 if (!msg && name && createTarget?.panel.allBuckets.some(b => b.name === name)) {
                     msg = 'This bucket name already exists.';
                 }
                 this.classList.toggle('is-invalid', !!msg);
+                this.closest('.form-floating')?.classList.toggle('is-invalid', !!msg);
                 const errEl = document.getElementById('bkt-create-error');
                 errEl.textContent = msg;
                 errEl.classList.toggle('d-none', !msg);
-                document.getElementById('bkt-create-confirm').disabled = !name || !!msg;
+                ocRefs.createConfirm.disabled = !name || !!msg;
             });
-            document.getElementById('bkt-create-confirm').addEventListener('click', createBucket);
+            ocRefs.createConfirm.addEventListener('click', createBucket);
         }
         document.getElementById('bkt-object-refresh').addEventListener('click', loadObjects);
         document.getElementById('bktDeleteModal').addEventListener('show.bs.modal', () => {
@@ -1463,21 +1477,37 @@ const BucketPanel = (() => {
         return '';
     }
 
-    function openCreateModal(panel) {
-        const r = ocInit();
-        if (!r || !r.createModal) return;
-        createTarget = { panel };
+    // 패널의 credential/region으로 offcanvas 컨텍스트 문구 갱신
+    function updateOcContext(panel) {
         const credText = panel.cred?.options?.[panel.cred.selectedIndex]?.textContent?.trim() || panel.provider.value || '—';
-        document.getElementById('bkt-create-context').textContent = credText;
-        r.createModal.show();
+        const region = panel.region?.value;
+        ocRefs.context.textContent = (region && region !== 'none') ? `${credText} / ${region}` : credText;
+    }
+
+    // 생성 모드로 offcanvas 열기 (gen-object-storage enterCreateMode와 동일 UX)
+    function enterCreateMode(panel) {
+        const r = ocInit();
+        if (!r || !r.sectionCreate) return;
+        createTarget = { panel };
+        r.title.innerHTML = '<i class="bi bi-plus-circle me-2 text-primary"></i>Create Bucket';
+        r.sectionCreate.classList.remove('d-none');
+        r.sectionObjects.classList.add('d-none');
+        r.createConfirm.classList.remove('d-none');
+        r.createInput.value = '';
+        r.createInput.classList.remove('is-invalid');
+        r.createInput.closest('.form-floating')?.classList.remove('is-invalid');
+        document.getElementById('bkt-create-error').classList.add('d-none');
+        r.createConfirm.disabled = true;
+        updateOcContext(panel);
+        r.oc.show();
     }
 
     async function createBucket() {
         if (!createTarget) return;
         const panel = createTarget.panel;
-        const name = document.getElementById('bkt-create-input').value.trim();
+        const name = ocRefs.createInput.value.trim();
         if (!name || bucketNameError(name)) return;
-        const btn = document.getElementById('bkt-create-confirm');
+        const btn = ocRefs.createConfirm;
         btn.disabled = true;
         btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Creating...';
         try {
@@ -1490,7 +1520,7 @@ const BucketPanel = (() => {
             if ((json.Result || '').includes('already exists')) {
                 alert(`Bucket '${name}' already exists.`);
             }
-            ocRefs.createModal.hide();
+            ocRefs.oc.hide();
             // 방금 만든 버킷을 바로 선택 상태로 (gen-object-storage와 동일 UX)
             // select 페이지는 목록 갱신으로 옵션이 생긴 뒤에 값을 넣어야 반영된다
             await panel.load();
@@ -1522,6 +1552,12 @@ const BucketPanel = (() => {
         browse = { panel, name, region: region || panel.region.value };
         currentPrefix = '';
         r.title.innerHTML = `<i class="bi bi-bucket me-2 text-primary"></i>${esc(name)}`;
+        if (r.sectionCreate) {
+            r.sectionCreate.classList.add('d-none');
+            r.sectionObjects.classList.remove('d-none');
+            r.createConfirm.classList.add('d-none');
+            updateOcContext(panel);
+        }
         r.oc.show();
         loadObjects();
     }
@@ -1725,9 +1761,13 @@ const BucketPanel = (() => {
             load, clear,
         };
 
-        // 선택 상태에 따라 툴바 Delete 버튼 활성화
+        // 선택 상태에 따라 툴바 Delete 버튼 활성화 (생성 중 버킷은 삭제 불가)
         function updateDeleteBtn() {
-            if (panel.deleteBtn) panel.deleteBtn.disabled = !(panel.bucketInput?.value || '').trim();
+            if (!panel.deleteBtn) return;
+            const name = (panel.bucketInput?.value || '').trim();
+            const b = name ? panel.allBuckets.find(x => x.name === name) : null;
+            const isCreating = !!b && (b.status || '').toLowerCase().includes('creating');
+            panel.deleteBtn.disabled = !name || isCreating;
         }
 
         function syncHighlight() {
@@ -1753,7 +1793,7 @@ const BucketPanel = (() => {
             if (panel.page > totalPages) panel.page = totalPages;
 
             if (!filtered.length) {
-                panel.tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted small py-3">No buckets found</td></tr>';
+                panel.tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted small py-3">No buckets found</td></tr>';
             } else {
                 const provider = panel.provider.value || '';
                 const selected = (panel.bucketInput?.value || '').trim();
@@ -1767,6 +1807,7 @@ const BucketPanel = (() => {
                     const isSel = selected === b.name;
                     return `<tr class="bkt-row${isSel ? ' table-active' : ''}" style="cursor:pointer;"
                             data-name="${esc(b.name)}" data-region="${esc(region)}" data-conn-region="${esc(connRegion)}">
+                        <td class="text-center align-middle"><input type="checkbox" class="form-check-input row-select"${isSel ? ' checked' : ''}></td>
                         <td class="small text-truncate" style="max-width:180px;" title="${esc(b.cspResourceId || '')}">${esc(b.cspResourceId || '-')}</td>
                         <td class="small">${esc(b.name)}</td>
                         <td class="small">${esc(regionName)}</td>
@@ -1818,11 +1859,11 @@ const BucketPanel = (() => {
             if (!provider || provider === 'none') {
                 panel.allBuckets = [];
                 populateBucketSelect();
-                panel.tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted small py-3">Select a credential to list buckets</td></tr>';
+                panel.tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted small py-3">Select a credential to list buckets</td></tr>';
                 panel.pagination.innerHTML = '';
                 return;
             }
-            panel.tbody.innerHTML = '<tr><td colspan="6" class="text-center py-3"><span class="spinner-border spinner-border-sm text-muted"></span></td></tr>';
+            panel.tbody.innerHTML = '<tr><td colspan="7" class="text-center py-3"><span class="spinner-border spinner-border-sm text-muted"></span></td></tr>';
             try {
                 const res = await fetch(`/objectstorage/buckets?filterKey=providerName&filterVal=${encodeURIComponent(provider)}`, {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -1835,9 +1876,10 @@ const BucketPanel = (() => {
                 panel.page = 1;
                 populateBucketSelect();
                 render();
+                updateDeleteBtn(); // 재조회로 상태가 바뀐 선택 버킷(creating→available)의 Delete 재평가
             } catch (e) {
                 console.error('BucketPanel.load:', e);
-                panel.tbody.innerHTML = '<tr><td colspan="6" class="text-center text-danger small py-3">Failed to load bucket list</td></tr>';
+                panel.tbody.innerHTML = '<tr><td colspan="7" class="text-center text-danger small py-3">Failed to load bucket list</td></tr>';
                 panel.pagination.innerHTML = '';
             }
         }
@@ -1894,7 +1936,7 @@ const BucketPanel = (() => {
                 const p = panel.provider.value || '';
                 panel.createBtn.disabled = !p || p === 'none';
             };
-            panel.createBtn.addEventListener('click', () => openCreateModal(panel));
+            panel.createBtn.addEventListener('click', () => enterCreateMode(panel));
             panel.provider.addEventListener('change', updateCreateBtn);
             updateCreateBtn();
         }
@@ -1909,15 +1951,15 @@ const BucketPanel = (() => {
 })();
 
 // ─────────────────────────────────────────────────────────────────────────────
-// DBInstancePanel — DB 인스턴스 생성/삭제 공용 컴포넌트 (SQL·NoSQL)
+// InstancePanel — DB 인스턴스 생성/삭제 공용 컴포넌트 (SQL·NoSQL)
 //
 // gen-mysql/gen-no-sql의 생성·삭제 기능을 migration/backup/restore 페이지에서
 // 재사용하기 위한 모듈. 목록 조회/렌더는 각 페이지의 기존 구현을 그대로 두고,
 // 이 모듈은 생성 Offcanvas + 삭제 모달 + 완료 폴링만 담당한다.
 //
 // 사용법:
-//   페이지에 {{ template "db-instance-panel.html" . }} 를 한 번 include 하고:
-//   const panel = DBInstancePanel.init({
+//   페이지에 {{ template "instance-panel.html" . }} 를 한 번 include 하고:
+//   const panel = InstancePanel.init({
 //     kind: 'rdbms' | 'nrdbms',            // API: /db/{kind}
 //     getProvider: () => str, getRegion: () => str,
 //     getCredLabel: () => str,             // offcanvas 컨텍스트 표기용 (옵션)
@@ -1927,7 +1969,7 @@ const BucketPanel = (() => {
 //   });
 //   행 선택이 바뀔 때 panel.refreshButtons() 를 호출한다.
 // ─────────────────────────────────────────────────────────────────────────────
-const DBInstancePanel = (() => {
+const InstancePanel = (() => {
     const POLL_MS = 5000;
 
     // ── provider별 계정/비밀번호 규칙 (gen-mysql/gen-no-sql과 동일 기준) ──
@@ -2005,7 +2047,7 @@ const DBInstancePanel = (() => {
     function uiInit() {
         if (refs) return refs;
         const oc = document.getElementById('dbiOffcanvas');
-        if (!oc) { console.warn('DBInstancePanel: db-instance-panel.html 파셜이 include되지 않았습니다'); return null; }
+        if (!oc) { console.warn('InstancePanel: instance-panel.html 파셜이 include되지 않았습니다'); return null; }
         refs = {
             oc: new bootstrap.Offcanvas(oc, { backdrop: true, scroll: false }),
             deleteModal: new bootstrap.Modal(document.getElementById('dbiDeleteModal')),
@@ -2183,7 +2225,7 @@ const DBInstancePanel = (() => {
                     loadClasses();
                 }
             }
-        } catch (e) { console.error('DBInstancePanel.engineVersions:', e); }
+        } catch (e) { console.error('InstancePanel.engineVersions:', e); }
     }
 
     function populateVersions() {
@@ -2215,7 +2257,7 @@ const DBInstancePanel = (() => {
             });
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             icLoadFamilies(await res.json() || []);
-        } catch (e) { console.error('DBInstancePanel.instanceClass:', e); }
+        } catch (e) { console.error('InstancePanel.instanceClass:', e); }
     }
 
     // ── Instance Class 2패널 드롭다운 (gen-mysql/gen-no-sql과 동일 UX) ──
@@ -2387,13 +2429,14 @@ const DBInstancePanel = (() => {
                 if (res.ok) {
                     const instances = await res.json() || [];
                     panel.onData(instances);
+                    panel.refreshButtons(); // 상태 전이(creating→available 등)에 따라 Delete 버튼 재평가
                     const found = Array.isArray(instances) ? instances.find(i => i.instanceId === instanceId) : null;
                     const done = mode === 'delete'
                         ? !found
                         : (found && ['available', 'failed'].includes((found.status || '').toLowerCase()));
                     if (done) { stopPoll(); return; }
                 }
-            } catch (e) { console.error('DBInstancePanel.poll:', e); }
+            } catch (e) { console.error('InstancePanel.poll:', e); }
             pollTimer = setTimeout(tick, POLL_MS);
         }
         tick();
@@ -2431,7 +2474,12 @@ const DBInstancePanel = (() => {
             const p = panel.getProvider(), r = panel.getRegion();
             const ctxOk = p && p !== 'none' && r && r !== 'none';
             if (panel.createBtn) panel.createBtn.disabled = !ctxOk;
-            if (panel.deleteBtn) panel.deleteBtn.disabled = !(ctxOk && panel.getSelected && panel.getSelected());
+            // 생성 중(creating/net_creating 등) 인스턴스는 삭제 불가 — available 전이 후 재활성
+            const sel = panel.getSelected && panel.getSelected();
+            const row = sel && panel.getRows
+                ? (panel.getRows() || []).find(i => i.instanceId === sel.instanceId) : null;
+            const isCreating = !!row && (row.status || '').toLowerCase().includes('creating');
+            if (panel.deleteBtn) panel.deleteBtn.disabled = !(ctxOk && sel) || isCreating;
             if (panel.createBtn && sampleCfg) {
                 const s = sampleEligible();
                 panel.createBtn.innerHTML = '<i class="bi bi-plus-lg me-1"></i>' + (s ? 'Sample Data' : 'Instance');
@@ -2458,12 +2506,12 @@ const DBInstancePanel = (() => {
 //
 // gen-mysql/gen-no-sql의 Sample Data 생성 기능(제출 API·provider별 필드·검증)을
 // migration/backup/restore 페이지에서 재사용하기 위한 모듈.
-// DBInstancePanel과 연동해 Generate 페이지와 동일한 UX를 제공한다:
+// InstancePanel과 연동해 Generate 페이지와 동일한 UX를 제공한다:
 // 인스턴스 선택 시 '+ Instance' 버튼이 '+ Sample Data'로 전환되어 이 패널을 연다.
 //
-// 사용법 1 (권장 — DBInstancePanel 연동):
-//   DBInstancePanel.init({ kind, ..., sample: {} })                 // SQL
-//   DBInstancePanel.init({ kind, ..., sample: { awsBtn: el } })     // NoSQL (AWS 서버리스 진입 버튼)
+// 사용법 1 (권장 — InstancePanel 연동):
+//   InstancePanel.init({ kind, ..., sample: {} })                 // SQL
+//   InstancePanel.init({ kind, ..., sample: { awsBtn: el } })     // NoSQL (AWS 서버리스 진입 버튼)
 // 사용법 2 (독립 버튼):
 //   SamplePanel.attach({ openBtn, kind, getProvider, getRegion, getCredLabel?, getSelected })
 //
