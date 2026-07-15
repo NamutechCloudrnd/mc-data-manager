@@ -190,6 +190,11 @@
                                             <option value="{{ $value }}">{{ $value }}</option>
                                         {{ end }}
                                     </optgroup>
+                                    <optgroup label="NHN regions" data-provider="nhn" style="display: none;">
+                                        {{ range $index, $value := .NHNRegions }}
+                                            <option value="{{ $value }}">{{ $value }}</option>
+                                        {{ end }}
+                                    </optgroup>
                                 </select>
                                 <label for="targetRegionSelect">Select Region</label>
                             </div>
