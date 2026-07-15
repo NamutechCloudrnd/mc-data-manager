@@ -182,7 +182,7 @@ func buildCreateRequest(spec rdbinstance.CreateSpec, region string) *sqladmin.Da
 			IpConfiguration: &sqladmin.IpConfiguration{
 				Ipv4Enabled: true,
 				AuthorizedNetworks: []*sqladmin.AclEntry{
-					{Value: "0.0.0.0/0"},
+					{Value: config.OutboundIP},
 				},
 			},
 		},

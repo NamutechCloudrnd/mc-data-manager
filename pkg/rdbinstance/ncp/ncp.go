@@ -177,7 +177,7 @@ func (p *NCPProvider) CreateInstance(_ context.Context, spec rdbinstance.CreateS
 		CloudMysqlUserName:         ncloud.String(spec.MasterUsername),
 		CloudMysqlUserPassword:     ncloud.String(spec.MasterPassword),
 		HostIp:                     ncloud.String("%"),
-		CloudMysqlDatabaseName:     ncloud.String(spec.InstanceID + "-default"),
+		CloudMysqlDatabaseName:     ncloud.String("mcmp_default"),
 		EngineVersionCode:          ncloud.String(spec.EngineVersion),
 		CloudMysqlProductCode:      ncloud.String(spec.InstanceClass),
 		IsBackup:                   ncloud.Bool(false),

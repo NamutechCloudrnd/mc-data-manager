@@ -13,6 +13,7 @@ import (
 	"github.com/NaverCloudPlatform/ncloud-sdk-go-v2/hmac"
 	"github.com/NaverCloudPlatform/ncloud-sdk-go-v2/ncloud"
 	ncpvserver "github.com/NaverCloudPlatform/ncloud-sdk-go-v2/services/vserver"
+	"github.com/cloud-barista/mc-data-manager/config"
 	"github.com/rs/zerolog/log"
 )
 
@@ -62,7 +63,7 @@ func (p *NCPProvider) addACGInboundRule(acgNo, vpcNo, port string) error {
 		AccessControlGroupRuleList: []*ncpvserver.AddAccessControlGroupRuleParameter{
 			{
 				ProtocolTypeCode: ncloud.String("TCP"),
-				IpBlock:          ncloud.String("0.0.0.0/0"),
+				IpBlock:          ncloud.String(config.OutboundIP),
 				PortRange:        ncloud.String(port),
 			},
 		},

@@ -1148,7 +1148,7 @@ func handleNRDBMSGenerateTask(params models.BasicDataTask) models.Status {
 
 		log.Info().Msgf("Import start: %s", fileName)
 		if err := NRDBC.Put(tableName, &srcData); err != nil {
-			log.Error().Msgf("Put error importing into nrdbms")
+			log.Error().Msgf("Put error importing into nrdbms: %v", err)
 			return models.StatusFailed
 		}
 		log.Info().Msgf("successfully imported : %s", params.Dummy.DummyPath)
