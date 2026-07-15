@@ -43,46 +43,7 @@
                         <div class="form-floating">
                             <select class="form-select form-select-sm rounded-end" id="sourceRegionSelect" name="sourcePoint[region]">
                                 <option value="none" selected> - </option>
-                                <optgroup label="AWS regions" data-provider="aws" style="display: none;">
-                                    {{ range $index, $value := .AWSRegions }}
-                                        <option value="{{ $value }}">{{ $value }}</option>
-                                    {{ end }}
-                                </optgroup>
-                                <optgroup label="GCP regions" data-provider="gcp" style="display: none;">
-                                    {{ range $index, $value := .GCPRegions }}
-                                        <option value="{{ $value }}">{{ $value }}</option>
-                                    {{ end }}
-                                </optgroup>
-                                <optgroup label="NCP regions" data-provider="ncp" style="display: none;">
-                                    {{ range $index, $value := .NCPRegions }}
-                                        <option value="{{ $value }}">{{ $value }}</option>
-                                    {{ end }}
-                                </optgroup>
-                                <optgroup label="ALIBABA regions" data-provider="alibaba" style="display: none;">
-                                    {{ range $index, $value := .ALIBABARegions }}
-                                        <option value="{{ $value }}">{{ $value }}</option>
-                                    {{ end }}
-                                </optgroup>
-                                <optgroup label="IBM regions" data-provider="ibm" style="display: none;">
-                                    {{ range $index, $value := .IBMRegions }}
-                                        <option value="{{ $value }}">{{ $value }}</option>
-                                    {{ end }}
-                                </optgroup>
-                                <optgroup label="KT regions" data-provider="kt" style="display: none;">
-                                    {{ range $index, $value := .KTRegions }}
-                                        <option value="{{ $value }}">{{ $value }}</option>
-                                    {{ end }}
-                                </optgroup>
-                                <optgroup label="TENCENT regions" data-provider="tencent" style="display: none;">
-                                    {{ range $index, $value := .TencentRegions }}
-                                        <option value="{{ $value }}">{{ $value }}</option>
-                                    {{ end }}
-                                </optgroup>
-                                <optgroup label="NHN regions" data-provider="nhn" style="display:none;">
-                                    {{ range $index, $value := .NHNRegions }}
-                                    <option value="{{ $value }}">{{ $value }}</option>
-                                    {{ end }}
-                                </optgroup>
+                                {{ template "region-optgroups-csp.html" . }}
                             </select>
                             <label for="sourceRegionSelect">Select Region</label>
                         </div>
@@ -296,13 +257,16 @@
                         <div class="d-flex justify-content-end mb-2">
                             <button type="button" class="btn btn-secondary btn-sm" id="nrdb-load-db-btn">Load Databases</button>
                         </div>
-                        <div class="input-group">
-                            <span class="input-group-text rounded-start"><i class="fa-solid fa-database"></i></span>
-                            <div class="form-floating">
-                                <select class="form-select rounded-end" id="nosql-databaseName" name="sourcePoint[databaseName]">
-                                    <option value="">- Select Database -</option>
-                                </select>
-                                <label for="nosql-databaseName">DataBase Name</label>
+                        <!-- Database section: shown after Load Databases (rdbms-db-section과 동일 패턴) -->
+                        <div id="nrdb-db-section" style="display:none;" class="mt-2">
+                            <div class="input-group">
+                                <span class="input-group-text rounded-start"><i class="fa-solid fa-database"></i></span>
+                                <div class="form-floating">
+                                    <select class="form-select rounded-end" id="nosql-databaseName" name="sourcePoint[databaseName]">
+                                        <option value="">- Select Database -</option>
+                                    </select>
+                                    <label for="nosql-databaseName">DataBase Name</label>
+                                </div>
                             </div>
                         </div>
                         </div><!-- /nrdbms-mongo-fields -->
@@ -690,17 +654,6 @@ const source = {
     let selectedSrcInstance = null;
     const SRC_PAGE_SIZE = 10;
 
-    function rdbmsStatusBadge(status) {
-        const s = (status || '').toLowerCase();
-        if (s === 'available') {
-            return `<span class="text-success small"><i class="bi bi-check-circle-fill me-1"></i>available</span>`;
-        }
-        if (s === 'deleting') {
-            return `<span class="text-danger small"><span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>deleting</span>`;
-        }
-        return `<span class="text-primary small"><i class="bi bi-hourglass-split ic-spin me-1"></i>creating</span>`;
-    }
-
     function makeSrcRdbmsRow(inst) {
         const available = (inst.status || '').toLowerCase() === 'available';
         const isSelected = selectedSrcInstance && selectedSrcInstance.instanceId === (inst.instanceId || '');
@@ -713,7 +666,7 @@ const source = {
                     <td class="text-center align-middle"><input type="checkbox" class="form-check-input row-select"${isSelected ? ' checked' : ''}></td>
                     <td class="small">${inst.instanceId || '-'}</td>
                     <td class="small">${inst.name || '-'}</td>
-                    <td>${rdbmsStatusBadge(inst.status)}</td>
+                    <td>${instanceStatusBadge(inst.status)}</td>
                     <td class="small">${inst.engineVersion || '-'}</td>
                     <td class="small text-truncate" style="max-width:200px;" title="${inst.endpoint || ''}">${inst.endpoint || '-'}</td>
                     <td class="small">${inst.port || '-'}</td>
@@ -726,19 +679,11 @@ const source = {
         return q ? srcRdbmsAllRows.filter(r => (r.name || r.instanceId || '').toLowerCase().includes(q)) : srcRdbmsAllRows;
     }
 
+    // 인자는 '아이템 수'다 — 공용 renderPagination은 페이지 수를 받으므로 여기서 변환한다
     function renderSrcRdbmsPagination(total) {
-        const pages = Math.ceil(total / SRC_PAGE_SIZE) || 1;
-        const el = document.getElementById('rdbms-pagination');
-        if (pages <= 1) { el.innerHTML = ''; return; }
-        let html = '<ul class="pagination pagination-sm mb-0">';
-        for (let i = 1; i <= pages; i++) {
-            html += `<li class="page-item${i === srcRdbmsPage ? ' active' : ''}"><a class="page-link src-rdbms-page" href="#" data-page="${i}">${i}</a></li>`;
-        }
-        html += '</ul>';
-        el.innerHTML = html;
-        el.querySelectorAll('.src-rdbms-page').forEach(a => {
-            a.addEventListener('click', e => { e.preventDefault(); srcRdbmsPage = +a.dataset.page; renderSrcRdbmsTable(); });
-        });
+        renderPagination(document.getElementById('rdbms-pagination'),
+            Math.ceil(total / SRC_PAGE_SIZE) || 1, srcRdbmsPage,
+            p => { srcRdbmsPage = p; renderSrcRdbmsTable(); });
     }
 
     function renderSrcRdbmsTable() {
@@ -792,13 +737,6 @@ const source = {
 
     // Region 셀렉트를 인스턴스의 region과 대소문자 무시로 동기화.
     // change는 dispatch하지 않는다 — 목록 리로드로 방금 한 선택이 풀리는 것을 방지.
-    function autoSelectRegion(rows, instanceId, regionSel) {
-        const inst = (rows || []).find(i => i.instanceId === instanceId);
-        if (!inst || !inst.region || !regionSel) return;
-        const opt = [...regionSel.options].find(o => (o.value || '').toLowerCase() === String(inst.region).toLowerCase());
-        if (opt && regionSel.value !== opt.value) regionSel.value = opt.value;
-    }
-
     function resetRdbmsTable() {
         srcRdbmsAllRows = []; srcRdbmsPage = 1;
         selectedSrcInstance = null;
@@ -926,7 +864,7 @@ const source = {
                     <td class="text-center align-middle"><input type="checkbox" class="form-check-input row-select"${isSelected ? ' checked' : ''}></td>
                     <td class="small">${iid || '-'}</td>
                     <td class="small">${inst.name || '-'}</td>
-                    <td>${rdbmsStatusBadge(inst.status)}</td>
+                    <td>${instanceStatusBadge(inst.status)}</td>
                     <td class="small">${inst.engineVersion || '-'}</td>
                     <td class="small text-truncate" style="max-width:200px;" title="${inst.endpoint || ''}">${inst.endpoint || '-'}</td>
                     <td class="small">${inst.port || '-'}</td>
@@ -938,19 +876,11 @@ const source = {
         return q ? nrdbAllRows.filter(r => (r.name || r.instanceId || '').toLowerCase().includes(q)) : nrdbAllRows;
     }
 
+    // 인자는 '아이템 수'다 — 공용 renderPagination은 페이지 수를 받으므로 여기서 변환한다
     function renderNrdbPagination(total) {
-        const pages = Math.ceil(total / SRC_PAGE_SIZE) || 1;
-        const el = document.getElementById('nrdbms-pagination');
-        if (pages <= 1) { el.innerHTML = ''; return; }
-        let html = '<ul class="pagination pagination-sm mb-0">';
-        for (let i = 1; i <= pages; i++) {
-            html += `<li class="page-item${i === nrdbPage ? ' active' : ''}"><a class="page-link src-nrdb-page" href="#" data-page="${i}">${i}</a></li>`;
-        }
-        html += '</ul>';
-        el.innerHTML = html;
-        el.querySelectorAll('.src-nrdb-page').forEach(a => {
-            a.addEventListener('click', e => { e.preventDefault(); nrdbPage = +a.dataset.page; renderNrdbTable(); });
-        });
+        renderPagination(document.getElementById('nrdbms-pagination'),
+            Math.ceil(total / SRC_PAGE_SIZE) || 1, nrdbPage,
+            p => { nrdbPage = p; renderNrdbTable(); });
     }
 
     function renderNrdbTable() {
@@ -995,9 +925,12 @@ const source = {
     // ── Database 목록 (POST /db/nrdbms/databases) ──────────
     // 접속 정보(host/port/username/password) 입력 후 Load Databases 버튼으로
     // 서버의 실제 DB 목록을 조회해 select box에 채운다 (mig-mysql의 rdbms/databases 패턴).
+    // 모든 리셋 경로(인스턴스 변경·조회 직전 등)가 이 함수를 지나므로 숨김도 여기서 처리한다.
     function resetNrdbDbSelect() {
         const sel = document.getElementById('nosql-databaseName');
         if (sel) sel.innerHTML = '<option value="">- Select Database -</option>';
+        const sec = document.getElementById('nrdb-db-section');
+        if (sec) sec.style.display = 'none';
     }
 
     function loadNrdbDatabases() {
@@ -1027,6 +960,7 @@ const source = {
                 opt.value = db; opt.textContent = db;
                 sel.appendChild(opt);
             });
+            document.getElementById('nrdb-db-section').style.display = '';
         })
         .catch(err => alert(`Failed to load databases: ${err}`))
         .finally(() => { btn.disabled = false; btn.textContent = 'Load Databases'; });

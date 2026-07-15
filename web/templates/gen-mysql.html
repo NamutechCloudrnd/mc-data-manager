@@ -34,26 +34,7 @@
                 <div class="form-floating">
                     <select class="form-select form-select-sm rounded-end" id="targetRegionSelect" name="targetPoint[region]">
                         <option value="none" selected> - </option>
-                        <optgroup label="AWS regions" data-provider="aws" style="display:none;">
-                            {{ range $index, $value := .AWSRegions }}
-                            <option value="{{ $value }}">{{ $value }}</option>
-                            {{ end }}
-                        </optgroup>
-                        <optgroup label="GCP regions" data-provider="gcp" style="display:none;">
-                            {{ range $index, $value := .GCPRegions }}
-                            <option value="{{ $value }}">{{ $value }}</option>
-                            {{ end }}
-                        </optgroup>
-                        <optgroup label="NCP regions" data-provider="ncp" style="display:none;">
-                            {{ range $index, $value := .NCPRegions }}
-                            <option value="{{ $value }}">{{ $value }}</option>
-                            {{ end }}
-                        </optgroup>
-                        <optgroup label="ALIBABA regions" data-provider="alibaba" style="display:none;">
-                            {{ range $index, $value := .ALIBABARegions }}
-                            <option value="{{ $value }}">{{ $value }}</option>
-                            {{ end }}
-                        </optgroup>
+                        {{ template "region-optgroups-db.html" . }}
                     </select>
                     <label for="targetRegionSelect">Select Region</label>
                 </div>
@@ -156,11 +137,6 @@ document.addEventListener('DOMContentLoaded', function () {
         return !!host;
     }
 
-    function esc(s) {
-        return String(s == null ? '—' : s)
-            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    }
-
     // ── 인스턴스 생성/삭제/샘플데이터 (공용 InstancePanel + SamplePanel) ──
     const instPanel = InstancePanel.init({
         kind: 'rdbms',
@@ -189,40 +165,24 @@ document.addEventListener('DOMContentLoaded', function () {
         },
     });
 
-    // ── Status 배지 ───────────────────────────────────────
-    function statusBadge(status) {
-        const s = (status || '').toLowerCase();
-        if (s === 'available') {
-            return `<span class="text-success small"><i class="bi bi-check-circle-fill me-1"></i>available</span>`;
-        }
-        if (s === 'deleting') {
-            return `<span class="text-danger small"><span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>deleting</span>`;
-        }
-        if (s === 'failed') {
-            return `<span class="text-danger small"><i class="bi bi-x-circle-fill me-1"></i>failed</span>`;
-        }
-        // 그 외 상태(net_creating 등)는 API가 반환한 값을 그대로 표시한다
-        return `<span class="text-primary small"><i class="bi bi-hourglass-split ic-spin me-1"></i>${esc(s || '-')}</span>`;
-    }
-
     function makeRow(i) {
         const iid = i.instanceId || i.name || '';
         const isSelected = selectedInstance && selectedInstance.instanceId === iid;
         return `<tr class="rdb-row${isSelected ? ' table-active' : ''}"
                 style="cursor:pointer;"
-                data-instance-id="${esc(iid)}"
-                data-endpoint="${esc(i.endpoint || '')}"
-                data-port="${esc(String(i.port || ''))}"
-                data-name="${esc(i.name || iid)}"
-                data-status="${esc(i.status || '')}">
+                data-instance-id="${escHtml(iid)}"
+                data-endpoint="${escHtml(i.endpoint || '')}"
+                data-port="${escHtml(String(i.port || ''))}"
+                data-name="${escHtml(i.name || iid)}"
+                data-status="${escHtml(i.status || '')}">
             <td class="text-center align-middle"><input type="checkbox" class="form-check-input row-select"${isSelected ? ' checked' : ''}></td>
-            <td class="small">${esc(i.instanceId || '-')}</td>
-            <td class="small">${esc(i.name || i.instanceId)}</td>
-            <td>${statusBadge(i.status)}</td>
-            <td class="small">${esc(i.engineVersion)}</td>
-            <td class="small text-truncate" style="max-width:200px;" title="${esc(i.endpoint)}">${esc(i.endpoint)}</td>
-            <td class="small">${esc(String(i.port))}</td>
-            <td class="small">${esc(i.instanceClass)}</td>
+            <td class="small">${escHtml(i.instanceId || '-')}</td>
+            <td class="small">${escHtml(i.name || i.instanceId)}</td>
+            <td>${instanceStatusBadge(i.status)}</td>
+            <td class="small">${escHtml(i.engineVersion)}</td>
+            <td class="small text-truncate" style="max-width:200px;" title="${escHtml(i.endpoint)}">${escHtml(i.endpoint)}</td>
+            <td class="small">${escHtml(String(i.port))}</td>
+            <td class="small">${escHtml(i.instanceClass)}</td>
         </tr>`;
     }
 
@@ -245,45 +205,9 @@ document.addEventListener('DOMContentLoaded', function () {
                 row.addEventListener('click', () => onRowClick(row));
             });
         }
-        renderPagination(totalPages);
-    }
-
-    function renderPagination(totalPages) {
-        const container = document.getElementById('rdb-pagination');
-        if (totalPages <= 1) { container.innerHTML = ''; return; }
-
-        const range = [];
-        if (totalPages <= 7) {
-            for (let p = 1; p <= totalPages; p++) range.push(p);
-        } else {
-            range.push(1);
-            if (currentPage > 3) range.push('...');
-            const s = Math.max(2, currentPage - 1);
-            const e = Math.min(totalPages - 1, currentPage + 1);
-            for (let p = s; p <= e; p++) range.push(p);
-            if (currentPage < totalPages - 2) range.push('...');
-            range.push(totalPages);
-        }
-
-        const prev = `<li class="page-item ${currentPage === 1 ? 'disabled' : ''}"><a class="page-link" href="#" data-page="${currentPage - 1}">‹</a></li>`;
-        const next = `<li class="page-item ${currentPage === totalPages ? 'disabled' : ''}"><a class="page-link" href="#" data-page="${currentPage + 1}">›</a></li>`;
-        const pages = range.map(p =>
-            p === '...'
-                ? `<li class="page-item disabled"><span class="page-link">…</span></li>`
-                : `<li class="page-item ${p === currentPage ? 'active' : ''}"><a class="page-link" href="#" data-page="${p}">${p}</a></li>`
-        ).join('');
-
-        container.innerHTML = `<nav><ul class="pagination pagination-sm mb-0 justify-content-center">${prev}${pages}${next}</ul></nav>`;
-        container.querySelectorAll('a.page-link').forEach(link => {
-            link.addEventListener('click', e => {
-                e.preventDefault();
-                const p = parseInt(link.dataset.page);
-                if (!isNaN(p) && p >= 1 && p <= totalPages && p !== currentPage) {
-                    currentPage = p;
-                    applyFilter();
-                }
-            });
-        });
+        // totalPages는 이미 페이지 수 (215행에서 계산)
+        renderPagination(document.getElementById('rdb-pagination'), totalPages, currentPage,
+            p => { currentPage = p; applyFilter(); });
     }
 
     // 행 클릭 = 선택 토글. available이 아니어도(failed 등) 선택 허용 — 잔재 삭제 가능.
@@ -406,20 +330,9 @@ document.addEventListener('DOMContentLoaded', function () {
         regionSelect.dispatchEvent(new Event('change'));
     }
 
-    function waitForCredentials() {
-        return new Promise(resolve => {
-            if (credSelect.options.length > 1) { resolve(); return; }
-            const obs = new MutationObserver(() => {
-                if (credSelect.options.length > 1) { obs.disconnect(); resolve(); }
-            });
-            obs.observe(credSelect, { childList: true });
-            setTimeout(() => { obs.disconnect(); resolve(); }, 3000);
-        });
-    }
-
     // ── 초기화 ───────────────────────────────────────────
     instPanel.refreshButtons();
-    waitForCredentials().then(restoreState);
+    waitForCredentials(credSelect).then(restoreState);
 });
 </script>
 

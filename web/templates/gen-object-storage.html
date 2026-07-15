@@ -40,46 +40,7 @@
                 <div class="form-floating">
                     <select class="form-select form-select-sm rounded-end" id="targetRegionSelect" name="targetPoint[region]">
                         <option value="none" selected> - </option>
-                        <optgroup label="AWS regions" data-provider="aws" style="display:none;">
-                            {{ range $index, $value := .AWSRegions }}
-                            <option value="{{ $value }}">{{ $value }}</option>
-                            {{ end }}
-                        </optgroup>
-                        <optgroup label="GCP regions" data-provider="gcp" style="display:none;">
-                            {{ range $index, $value := .GCPRegions }}
-                            <option value="{{ $value }}">{{ $value }}</option>
-                            {{ end }}
-                        </optgroup>
-                        <optgroup label="NCP regions" data-provider="ncp" style="display:none;">
-                            {{ range $index, $value := .NCPRegions }}
-                            <option value="{{ $value }}">{{ $value }}</option>
-                            {{ end }}
-                        </optgroup>
-                        <optgroup label="ALIBABA regions" data-provider="alibaba" style="display:none;">
-                            {{ range $index, $value := .ALIBABARegions }}
-                            <option value="{{ $value }}">{{ $value }}</option>
-                            {{ end }}
-                        </optgroup>
-                        <optgroup label="IBM regions" data-provider="ibm" style="display:none;">
-                            {{ range $index, $value := .IBMRegions }}
-                            <option value="{{ $value }}">{{ $value }}</option>
-                            {{ end }}
-                        </optgroup>
-                        <optgroup label="KT regions" data-provider="kt" style="display:none;">
-                            {{ range $index, $value := .KTRegions }}
-                            <option value="{{ $value }}">{{ $value }}</option>
-                            {{ end }}
-                        </optgroup>
-                        <optgroup label="TENCENT regions" data-provider="tencent" style="display:none;">
-                            {{ range $index, $value := .TencentRegions }}
-                            <option value="{{ $value }}">{{ $value }}</option>
-                            {{ end }}
-                        </optgroup>
-                        <optgroup label="NHN regions" data-provider="nhn" style="display:none;">
-                            {{ range $index, $value := .NHNRegions }}
-                            <option value="{{ $value }}">{{ $value }}</option>
-                            {{ end }}
-                        </optgroup>
+                        {{ template "region-optgroups-csp.html" . }}
                     </select>
                     <label for="targetRegionSelect">Select Region</label>
                 </div>

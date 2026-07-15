@@ -60,41 +60,7 @@
                                         <div class="form-floating">
                                             <select class="form-select form-select-sm rounded-end" id="sourceRegionSelect">
                                                 <option value="none" selected> - </option>
-                                                <optgroup label="AWS regions" data-provider="aws" style="display: none;">
-                                                    {{ range $index, $value := .AWSRegions }}
-                                                        <option value="{{ $value }}">{{ $value }}</option>
-                                                    {{ end }}
-                                                </optgroup>
-                                                <optgroup label="GCP regions" data-provider="gcp" style="display: none;">
-                                                    {{ range $index, $value := .GCPRegions }}
-                                                        <option value="{{ $value }}">{{ $value }}</option>
-                                                    {{ end }}
-                                                </optgroup>
-                                                <optgroup label="NCP regions" data-provider="ncp" style="display: none;">
-                                                    {{ range $index, $value := .NCPRegions }}
-                                                        <option value="{{ $value }}">{{ $value }}</option>
-                                                    {{ end }}
-                                                </optgroup>
-                                                <optgroup label="ALIBABA regions" data-provider="alibaba" style="display: none;">
-                                                    {{ range $index, $value := .ALIBABARegions }}
-                                                        <option value="{{ $value }}">{{ $value }}</option>
-                                                    {{ end }}
-                                                </optgroup>
-                                                <optgroup label="IBM regions" data-provider="ibm" style="display: none;">
-                                                    {{ range $index, $value := .IBMRegions }}
-                                                        <option value="{{ $value }}">{{ $value }}</option>
-                                                    {{ end }}
-                                                </optgroup>
-                                                <optgroup label="KT regions" data-provider="kt" style="display: none;">
-                                                    {{ range $index, $value := .KTRegions }}
-                                                        <option value="{{ $value }}">{{ $value }}</option>
-                                                    {{ end }}
-                                                </optgroup>
-                                                <optgroup label="TENCENT regions" data-provider="tencent" style="display: none;">
-                                                    {{ range $index, $value := .TencentRegions }}
-                                                        <option value="{{ $value }}">{{ $value }}</option>
-                                                    {{ end }}
-                                                </optgroup>
+                                                {{ template "region-optgroups-db.html" . }}
                                             </select>
                                             <label for="sourceRegionSelect">Select Region</label>
                                         </div>
@@ -334,41 +300,7 @@
                                         <div class="form-floating">
                                             <select class="form-select form-select-sm rounded-end" id="targetRegionSelect">
                                                 <option value="none" selected> - </option>
-                                                <optgroup label="AWS regions" data-provider="aws" style="display: none;">
-                                                    {{ range $index, $value := .AWSRegions }}
-                                                        <option value="{{ $value }}">{{ $value }}</option>
-                                                    {{ end }}
-                                                </optgroup>
-                                                <optgroup label="GCP regions" data-provider="gcp" style="display: none;">
-                                                    {{ range $index, $value := .GCPRegions }}
-                                                        <option value="{{ $value }}">{{ $value }}</option>
-                                                    {{ end }}
-                                                </optgroup>
-                                                <optgroup label="NCP regions" data-provider="ncp" style="display: none;">
-                                                    {{ range $index, $value := .NCPRegions }}
-                                                        <option value="{{ $value }}">{{ $value }}</option>
-                                                    {{ end }}
-                                                </optgroup>
-                                                <optgroup label="ALIBABA regions" data-provider="alibaba" style="display: none;">
-                                                    {{ range $index, $value := .ALIBABARegions }}
-                                                        <option value="{{ $value }}">{{ $value }}</option>
-                                                    {{ end }}
-                                                </optgroup>
-                                                <optgroup label="IBM regions" data-provider="ibm" style="display: none;">
-                                                    {{ range $index, $value := .IBMRegions }}
-                                                        <option value="{{ $value }}">{{ $value }}</option>
-                                                    {{ end }}
-                                                </optgroup>
-                                                <optgroup label="KT regions" data-provider="kt" style="display: none;">
-                                                    {{ range $index, $value := .KTRegions }}
-                                                        <option value="{{ $value }}">{{ $value }}</option>
-                                                    {{ end }}
-                                                </optgroup>
-                                                <optgroup label="TENCENT regions" data-provider="tencent" style="display: none;">
-                                                    {{ range $index, $value := .TencentRegions }}
-                                                        <option value="{{ $value }}">{{ $value }}</option>
-                                                    {{ end }}
-                                                </optgroup>
+                                                {{ template "region-optgroups-db.html" . }}
                                             </select>
                                             <label for="targetRegionSelect">Select Region</label>
                                         </div>
@@ -1119,30 +1051,29 @@
         });
     }
 
-    // ── Source RDBMS instance table ───────────────────────────────────
-    let srcRdbmsAllRows = [], srcRdbmsPage = 1;
     const SRC_PAGE_SIZE = 10;
 
     // Single-row selection state
     let selectedSrcInstance = null;   // {instanceId, name, endpoint, port} or null
     let selectedTgtInstance = null;
 
-    function srcRdbmsStatusBadge(status) {
-        const s = (status || '').toLowerCase();
-        if (s === 'available') {
-            return `<span class="text-success small"><i class="bi bi-check-circle-fill me-1"></i>available</span>`;
-        }
-        if (s === 'deleting') {
-            return `<span class="text-danger small"><span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>deleting</span>`;
-        }
-        return `<span class="text-primary small"><i class="bi bi-hourglass-split ic-spin me-1"></i>creating</span>`;
-    }
+    // ── RDBMS 인스턴스 테이블 공용 팩토리 (source/target 공유) ──────────
+    // 목록 상태(allRows/page)와 조회·필터·렌더·페이징을 담당한다.
+    // src/tgt가 구조적으로 다른 부분은 훅으로 주입한다:
+    //   onRowClick — src는 connect/db 섹션을 여닫고, tgt는 host/port만 채운다
+    //   onReset    — src만 조회 직전에 connect/db 섹션을 숨긴다 (tgt는 해당 섹션 없음)
+    // 참조 패턴: mig-no-sql.html의 makeController
+    function makeRdbmsTable(cfg) {
+        // cfg: { providerId, rowClass, tbodyId, pagId, searchId,
+        //        getRegion(), selected(), setSelected(v), onRowClick(row), onReset? }
+        let allRows = [], page = 1;
 
-    function makeSrcRdbmsRow(inst) {
-        const available = (inst.status || '').toLowerCase() === 'available';
-        const iid = inst.instanceId || '';
-        const isSelected = selectedSrcInstance && selectedSrcInstance.instanceId === iid;
-        return `<tr class="src-rdbms-row${isSelected ? ' table-active' : ''}" style="cursor:${available ? 'pointer' : 'default'};"
+        function makeRow(inst) {
+            const available = (inst.status || '').toLowerCase() === 'available';
+            const iid = inst.instanceId || '';
+            const sel = cfg.selected();
+            const isSelected = sel && sel.instanceId === iid;
+            return `<tr class="${cfg.rowClass}${isSelected ? ' table-active' : ''}" style="cursor:${available ? 'pointer' : 'default'};"
                     data-instance-id="${inst.instanceId || ''}"
                     data-endpoint="${inst.endpoint || ''}"
                     data-port="${inst.port || ''}"
@@ -1151,47 +1082,82 @@
                     <td class="text-center align-middle"><input type="checkbox" class="form-check-input row-select"${isSelected ? ' checked' : ''}></td>
                     <td class="small">${inst.instanceId || '-'}</td>
                     <td class="small">${inst.name || '-'}</td>
-                    <td>${srcRdbmsStatusBadge(inst.status)}</td>
+                    <td>${instanceStatusBadge(inst.status)}</td>
                     <td class="small">${inst.engineVersion || '-'}</td>
                     <td class="small text-truncate" style="max-width:200px;" title="${inst.endpoint || ''}">${inst.endpoint || '-'}</td>
                     <td class="small">${inst.port || '-'}</td>
                     <td class="small">${inst.instanceClass || '-'}</td>
                 </tr>`;
-    }
-
-    function applySrcRdbmsFilter() {
-        const q = (document.getElementById('src-rdbms-search').value || '').toLowerCase();
-        return q ? srcRdbmsAllRows.filter(r => (r.name || r.instanceId || '').toLowerCase().includes(q)) : srcRdbmsAllRows;
-    }
-
-    function renderSrcRdbmsPagination(total) {
-        const pages = Math.ceil(total / SRC_PAGE_SIZE) || 1;
-        const el = document.getElementById('src-rdbms-pagination');
-        if (pages <= 1) { el.innerHTML = ''; return; }
-        let html = '<ul class="pagination pagination-sm mb-0">';
-        for (let i = 1; i <= pages; i++) {
-            html += `<li class="page-item${i === srcRdbmsPage ? ' active' : ''}"><a class="page-link src-rdbms-page" href="#" data-page="${i}">${i}</a></li>`;
         }
-        html += '</ul>';
-        el.innerHTML = html;
-        el.querySelectorAll('.src-rdbms-page').forEach(a => {
-            a.addEventListener('click', e => { e.preventDefault(); srcRdbmsPage = +a.dataset.page; renderSrcRdbmsTable(); });
-        });
+
+        function filtered() {
+            const q = (document.getElementById(cfg.searchId).value || '').toLowerCase();
+            return q ? allRows.filter(r => (r.name || r.instanceId || '').toLowerCase().includes(q)) : allRows;
+        }
+
+        function render() {
+            const list  = filtered();
+            const start = (page - 1) * SRC_PAGE_SIZE;
+            const rows  = list.slice(start, start + SRC_PAGE_SIZE);
+            const tbody = document.getElementById(cfg.tbodyId);
+            tbody.innerHTML = rows.length
+                ? rows.map(makeRow).join('')
+                : '<tr><td colspan="8" class="text-center text-muted small py-3">No instances found</td></tr>';
+            tbody.querySelectorAll('.' + cfg.rowClass).forEach(row => {
+                row.addEventListener('click', () => cfg.onRowClick(row));
+            });
+            // 공용 renderPagination은 '페이지 수'를 받는다 — 아이템 수에서 변환
+            renderPagination(document.getElementById(cfg.pagId),
+                Math.ceil(list.length / SRC_PAGE_SIZE) || 1, page,
+                p => { page = p; render(); });
+        }
+
+        function load() {
+            const provider = document.getElementById(cfg.providerId)?.value || '';
+            const region   = cfg.getRegion();
+            if (!provider || provider === 'none' || !region || region === 'none') return;
+
+            const tbody = document.getElementById(cfg.tbodyId);
+            tbody.innerHTML = '<tr><td colspan="8" class="text-center py-3"><span class="spinner-border spinner-border-sm"></span></td></tr>';
+            if (cfg.onReset) cfg.onReset();
+            cfg.setSelected(null);
+
+            fetch('/db/rdbms', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ provider, region })
+            })
+            .then(r => r.ok ? r.json() : Promise.reject(r.status))
+            .then(json => { allRows = json || []; page = 1; render(); })
+            .catch(err => {
+                console.error('load ' + cfg.rowClass + ':', err);
+                allRows = []; page = 1; render();
+            });
+        }
+
+        return {
+            render, load,
+            getRows:   () => allRows,
+            setRows:   v => { allRows = v || []; },
+            resetPage: () => { page = 1; },
+        };
     }
 
-    function renderSrcRdbmsTable() {
-        const filtered = applySrcRdbmsFilter();
-        const start = (srcRdbmsPage - 1) * SRC_PAGE_SIZE;
-        const page = filtered.slice(start, start + SRC_PAGE_SIZE);
-        const tbody = document.getElementById('src-rdbms-table-body');
-        tbody.innerHTML = page.length
-            ? page.map(makeSrcRdbmsRow).join('')
-            : '<tr><td colspan="8" class="text-center text-muted small py-3">No instances found</td></tr>';
-        tbody.querySelectorAll('.src-rdbms-row').forEach(row => {
-            row.addEventListener('click', () => onSrcRdbmsRowClick(row));
-        });
-        renderSrcRdbmsPagination(filtered.length);
-    }
+    // ── Source RDBMS instance table ───────────────────────────────────
+    const srcTbl = makeRdbmsTable({
+        providerId: 'sourcePoint[provider]', rowClass: 'src-rdbms-row',
+        tbodyId: 'src-rdbms-table-body', pagId: 'src-rdbms-pagination', searchId: 'src-rdbms-search',
+        getRegion:   () => getSrcRegion(),
+        selected:    () => selectedSrcInstance,
+        setSelected: v => { selectedSrcInstance = v; },
+        onRowClick:  row => onSrcRdbmsRowClick(row),
+        onReset: () => {
+            document.getElementById('src-rdbms-connect-section').style.display = 'none';
+            document.getElementById('src-rdbms-db-section').style.display = 'none';
+        },
+    });
+    // 기존 심볼 유지 — 이벤트 배선/InstancePanel 등 외부 참조 12곳이 이 이름을 쓴다
+    function renderSrcRdbmsTable() { srcTbl.render(); }
 
     function onSrcRdbmsRowClick(row) {
         if (row.dataset.available !== '1') return;
@@ -1284,34 +1250,7 @@
         return p === 'ncp' ? r.toUpperCase() : r;
     }
 
-    function loadSrcRdbmsTable() {
-        const provider = document.getElementById('sourcePoint[provider]')?.value || '';
-        const region   = getSrcRegion();
-        if (!provider || provider === 'none' || !region || region === 'none') return;
-
-        const tbody = document.getElementById('src-rdbms-table-body');
-        tbody.innerHTML = '<tr><td colspan="8" class="text-center py-3"><span class="spinner-border spinner-border-sm"></span></td></tr>';
-        document.getElementById('src-rdbms-connect-section').style.display = 'none';
-        document.getElementById('src-rdbms-db-section').style.display = 'none';
-        selectedSrcInstance = null;
-
-        fetch('/db/rdbms', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ provider, region })
-        })
-        .then(r => r.ok ? r.json() : Promise.reject(r.status))
-        .then(json => {
-            srcRdbmsAllRows = json || [];
-            srcRdbmsPage = 1;
-            renderSrcRdbmsTable();
-        })
-        .catch(err => {
-            console.error('loadSrcRdbmsTable:', err);
-            srcRdbmsAllRows = []; srcRdbmsPage = 1;
-            renderSrcRdbmsTable();
-        });
-    }
+    function loadSrcRdbmsTable() { srcTbl.load(); }
 
     function loadSrcRdbmsDatabases() {
         const host = document.getElementById('mysql-srcHost').value;
@@ -1348,7 +1287,7 @@
         .finally(() => { btn.disabled = false; btn.innerHTML = 'Load Databases'; });
     }
 
-    document.getElementById('src-rdbms-search').addEventListener('input', () => { srcRdbmsPage = 1; renderSrcRdbmsTable(); });
+    document.getElementById('src-rdbms-search').addEventListener('input', () => { srcTbl.resetPage(); srcTbl.render(); });
     document.getElementById('src-load-db-btn').addEventListener('click', loadSrcRdbmsDatabases);
 
     const srcRegionSel = document.getElementById('sourceRegionSelect');
@@ -1359,8 +1298,8 @@
     const srcCredSel = document.getElementById('sourceCredentialSelect');
     if (srcCredSel) {
         srcCredSel.addEventListener('change', () => {
-            srcRdbmsAllRows = []; srcRdbmsPage = 1;
-            renderSrcRdbmsTable();
+            srcTbl.setRows([]); srcTbl.resetPage();
+            srcTbl.render();
             document.getElementById('src-rdbms-connect-section').style.display = 'none';
             document.getElementById('src-rdbms-db-section').style.display = 'none';
             // initProviderHandlers가 먼저 실행돼 region을 업데이트한 뒤 로드
@@ -1369,62 +1308,17 @@
     }
 
     // ── Target RDBMS instance table ───────────────────────────────────
-    let tgtRdbmsAllRows = [], tgtRdbmsPage = 1;
-
-    function makeTgtRdbmsRow(inst) {
-        const available = (inst.status || '').toLowerCase() === 'available';
-        const iid = inst.instanceId || '';
-        const isSelected = selectedTgtInstance && selectedTgtInstance.instanceId === iid;
-        return `<tr class="tgt-rdbms-row${isSelected ? ' table-active' : ''}" style="cursor:${available ? 'pointer' : 'default'};"
-                    data-instance-id="${inst.instanceId || ''}"
-                    data-endpoint="${inst.endpoint || ''}"
-                    data-port="${inst.port || ''}"
-                    data-name="${inst.name || inst.instanceId || ''}"
-                    data-available="${available ? '1' : '0'}">
-                    <td class="text-center align-middle"><input type="checkbox" class="form-check-input row-select"${isSelected ? ' checked' : ''}></td>
-                    <td class="small">${inst.instanceId || '-'}</td>
-                    <td class="small">${inst.name || '-'}</td>
-                    <td>${srcRdbmsStatusBadge(inst.status)}</td>
-                    <td class="small">${inst.engineVersion || '-'}</td>
-                    <td class="small text-truncate" style="max-width:200px;" title="${inst.endpoint || ''}">${inst.endpoint || '-'}</td>
-                    <td class="small">${inst.port || '-'}</td>
-                    <td class="small">${inst.instanceClass || '-'}</td>
-                </tr>`;
-    }
-
-    function applyTgtRdbmsFilter() {
-        const q = (document.getElementById('tgt-rdbms-search').value || '').toLowerCase();
-        return q ? tgtRdbmsAllRows.filter(r => (r.name || '').toLowerCase().includes(q)) : tgtRdbmsAllRows;
-    }
-
-    function renderTgtRdbmsPagination(total) {
-        const pages = Math.ceil(total / SRC_PAGE_SIZE) || 1;
-        const el = document.getElementById('tgt-rdbms-pagination');
-        if (pages <= 1) { el.innerHTML = ''; return; }
-        let html = '<ul class="pagination pagination-sm mb-0">';
-        for (let i = 1; i <= pages; i++) {
-            html += `<li class="page-item${i === tgtRdbmsPage ? ' active' : ''}"><a class="page-link tgt-rdbms-page" href="#" data-page="${i}">${i}</a></li>`;
-        }
-        html += '</ul>';
-        el.innerHTML = html;
-        el.querySelectorAll('.tgt-rdbms-page').forEach(a => {
-            a.addEventListener('click', e => { e.preventDefault(); tgtRdbmsPage = +a.dataset.page; renderTgtRdbmsTable(); });
-        });
-    }
-
-    function renderTgtRdbmsTable() {
-        const filtered = applyTgtRdbmsFilter();
-        const start = (tgtRdbmsPage - 1) * SRC_PAGE_SIZE;
-        const page = filtered.slice(start, start + SRC_PAGE_SIZE);
-        const tbody = document.getElementById('tgt-rdbms-table-body');
-        tbody.innerHTML = page.length
-            ? page.map(makeTgtRdbmsRow).join('')
-            : '<tr><td colspan="8" class="text-center text-muted small py-3">No instances found</td></tr>';
-        tbody.querySelectorAll('.tgt-rdbms-row').forEach(row => {
-            row.addEventListener('click', () => onTgtRdbmsRowClick(row));
-        });
-        renderTgtRdbmsPagination(filtered.length);
-    }
+    const tgtTbl = makeRdbmsTable({
+        providerId: 'targetPoint[provider]', rowClass: 'tgt-rdbms-row',
+        tbodyId: 'tgt-rdbms-table-body', pagId: 'tgt-rdbms-pagination', searchId: 'tgt-rdbms-search',
+        getRegion:   () => getTgtRegion(),
+        selected:    () => selectedTgtInstance,
+        setSelected: v => { selectedTgtInstance = v; },
+        onRowClick:  row => onTgtRdbmsRowClick(row),
+        // onReset 없음 — tgt에는 connect/db 섹션이 없다
+    });
+    // 기존 심볼 유지 — 이벤트 배선/InstancePanel 등 외부 참조가 이 이름을 쓴다
+    function renderTgtRdbmsTable() { tgtTbl.render(); }
 
     function onTgtRdbmsRowClick(row) {
         if (row.dataset.available !== '1') return;
@@ -1447,34 +1341,9 @@
         tgtDbiPanel.refreshButtons();
     }
 
-    function loadTgtRdbmsTable() {
-        const provider = document.getElementById('targetPoint[provider]')?.value || '';
-        const region   = getTgtRegion();
-        if (!provider || provider === 'none' || !region || region === 'none') return;
+    function loadTgtRdbmsTable() { tgtTbl.load(); }
 
-        const tbody = document.getElementById('tgt-rdbms-table-body');
-        tbody.innerHTML = '<tr><td colspan="8" class="text-center py-3"><span class="spinner-border spinner-border-sm"></span></td></tr>';
-        selectedTgtInstance = null;
-
-        fetch('/db/rdbms', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ provider, region })
-        })
-        .then(r => r.ok ? r.json() : Promise.reject(r.status))
-        .then(json => {
-            tgtRdbmsAllRows = json || [];
-            tgtRdbmsPage = 1;
-            renderTgtRdbmsTable();
-        })
-        .catch(err => {
-            console.error('loadTgtRdbmsTable:', err);
-            tgtRdbmsAllRows = []; tgtRdbmsPage = 1;
-            renderTgtRdbmsTable();
-        });
-    }
-
-    document.getElementById('tgt-rdbms-search').addEventListener('input', () => { tgtRdbmsPage = 1; renderTgtRdbmsTable(); });
+    document.getElementById('tgt-rdbms-search').addEventListener('input', () => { tgtTbl.resetPage(); tgtTbl.render(); });
 
     const tgtRegionSel = document.getElementById('targetRegionSelect');
     if (tgtRegionSel) {
@@ -1484,8 +1353,8 @@
     const tgtCredSel = document.getElementById('targetCredentialSelect');
     if (tgtCredSel) {
         tgtCredSel.addEventListener('change', () => {
-            tgtRdbmsAllRows = []; tgtRdbmsPage = 1;
-            renderTgtRdbmsTable();
+            tgtTbl.setRows([]); tgtTbl.resetPage();
+            tgtTbl.render();
             setTimeout(() => { loadTgtRdbmsTable(); applyTargetProviderRules(); }, 0);
         });
     }
@@ -1520,11 +1389,11 @@
         // 인스턴스 선택 시 '+ Instance' → '+ Sample Data' 전환 (gen-mysql과 동일 UX)
         sample: {},
         getSelected: () => selectedSrcInstance,
-        getRows: () => srcRdbmsAllRows,
+        getRows: () => srcTbl.getRows(),
         onData: (instances) => {
-            srcRdbmsAllRows = instances || [];
+            srcTbl.setRows(instances);
             // 삭제 완료 등으로 선택 인스턴스가 목록에서 사라지면 선택/접속정보 정리
-            if (selectedSrcInstance && !srcRdbmsAllRows.some(i => i.instanceId === selectedSrcInstance.instanceId)) {
+            if (selectedSrcInstance && !srcTbl.getRows().some(i => i.instanceId === selectedSrcInstance.instanceId)) {
                 selectedSrcInstance = null;
                 document.getElementById('src-rdbms-connect-section').style.display = 'none';
                 document.getElementById('src-rdbms-db-section').style.display = 'none';
@@ -1546,10 +1415,10 @@
         // 인스턴스 선택 시 '+ Instance' → '+ Sample Data' 전환 (gen-mysql과 동일 UX)
         sample: {},
         getSelected: () => selectedTgtInstance,
-        getRows: () => tgtRdbmsAllRows,
+        getRows: () => tgtTbl.getRows(),
         onData: (instances) => {
-            tgtRdbmsAllRows = instances || [];
-            if (selectedTgtInstance && !tgtRdbmsAllRows.some(i => i.instanceId === selectedTgtInstance.instanceId)) {
+            tgtTbl.setRows(instances);
+            if (selectedTgtInstance && !tgtTbl.getRows().some(i => i.instanceId === selectedTgtInstance.instanceId)) {
                 selectedTgtInstance = null;
                 document.getElementById('mysql-destHost').value = '';
                 document.getElementById('mysql-destPort').value = '';
@@ -1571,7 +1440,7 @@
     // change는 dispatch하지 않는다 — 목록 리로드로 방금 한 선택이 풀리는 것을 방지.
     // provider는 목록 조회에 사용한 값 그대로라 항상 일치.
     function autoSelectContext(point, instanceId) {
-        const rows = point === 'source' ? srcRdbmsAllRows : tgtRdbmsAllRows;
+        const rows = (point === 'source' ? srcTbl : tgtTbl).getRows();
         const inst = rows.find(i => i.instanceId === instanceId);
         if (!inst || !inst.region) return;
         const sel = document.getElementById(point === 'source' ? 'sourceRegionSelect' : 'targetRegionSelect');
