@@ -57,7 +57,7 @@ func buildCreateRequest(spec rdbinstance.CreateSpec, region string, vsw alibabac
 		VSwitchId:             tea.String(vsw.VSwitchID),
 		DBInstanceNetType:     tea.String("Internet"),
 		PayType:               tea.String("Postpaid"),
-		SecurityIPList:        tea.String("0.0.0.0/0"),
+		SecurityIPList:        tea.String(config.OutboundIP),
 		Category:              tea.String("Basic"),
 	}
 }

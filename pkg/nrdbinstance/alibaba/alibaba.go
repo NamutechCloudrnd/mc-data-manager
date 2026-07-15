@@ -169,7 +169,7 @@ func (p *AlibabaProvider) CreateInstance(_ context.Context, spec nrdbinstance.Cr
 		VSwitchId:             tea.String(vsw.VSwitchID),
 		StorageEngine:         tea.String(storageEngine),
 		AccountPassword:       tea.String(spec.MasterPassword),
-		SecurityIPList:        tea.String("0.0.0.0/0"),
+		SecurityIPList:        tea.String(config.OutboundIP),
 	})
 	if err != nil {
 		return models.NRDBInstance{}, fmt.Errorf("failed to create Alibaba MongoDB instance: %w", err)
