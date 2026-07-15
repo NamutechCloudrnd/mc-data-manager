@@ -98,7 +98,7 @@ func (p *AlibabaProvider) instanceEndpoint(instanceID string) (string, int32, er
 func pickEndpoint(replicaSets []*dds.DescribeReplicaSetRoleResponseBodyReplicaSetsReplicaSet) (string, int32) {
 	var privPort int32
 	for _, rs := range replicaSets {
-		if tea.StringValue(rs.NetworkType) == "Public" {
+		if tea.StringValue(rs.NetworkType) == "Public" && tea.StringValue(rs.ReplicaSetRole) == "Primary" {
 			return tea.StringValue(rs.ConnectionDomain), parsePort(rs.ConnectionPort)
 		}
 		if tea.StringValue(rs.NetworkType) == "VPC" {
