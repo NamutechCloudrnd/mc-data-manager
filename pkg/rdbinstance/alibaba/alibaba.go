@@ -2,6 +2,7 @@ package alibaba
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -43,9 +44,6 @@ func New(accessKey, secretKey, region string) (rdbinstance.Provider, error) {
 	return &AlibabaProvider{client: client, vpcClient: vpcClient, region: region} , nil
 }
 
-// buildCreateRequest maps a CSP-agnostic CreateSpec to an Alibaba
-// CreateDBInstanceRequest. Network type, pay type and the security IP list are
-// fixed here (not taken from the request body).
 func buildCreateRequest(spec rdbinstance.CreateSpec, region string, vsw alibabacommon.VSwitchInfo) *alibabards.CreateDBInstanceRequest {
 	return &alibabards.CreateDBInstanceRequest{
 		Engine:                tea.String(spec.Engine),
@@ -64,10 +62,6 @@ func buildCreateRequest(spec rdbinstance.CreateSpec, region string, vsw alibabac
 	}
 }
 
-// toCreatedDBInstance converts the CreateDBInstance response into the CSP-agnostic
-// model. Create-specific: the response lacks status/engine/version, so status is
-// fixed to "Creating" and engine/version/class are taken from the spec. List uses
-// a separate converter that reads the real DBInstanceStatus.
 func toCreatedDBInstance(spec rdbinstance.CreateSpec, body *alibabards.CreateDBInstanceResponseBody, region string) models.DBInstance {
 	return models.DBInstance{
 		Provider:      "alibaba",
@@ -83,8 +77,6 @@ func toCreatedDBInstance(spec rdbinstance.CreateSpec, body *alibabards.CreateDBI
 	}
 }
 
-// CreateInstance provisions a new RDS instance, then launches the background
-// account + public-endpoint provisioning. Returns the instance in "Creating" state.
 func (p *AlibabaProvider) CreateInstance(ctx context.Context, spec rdbinstance.CreateSpec) (models.DBInstance, error) {
 	vsw, err := alibabacommon.ResolveVSwitch(p.vpcClient, p.region)
 	if err != nil {
@@ -116,8 +108,6 @@ func parsePort(port *string) int32 {
 	return int32(v)
 }
 
-// toSnakeCase converts a CamelCase/PascalCase string to lower snake_case,
-// handling acronym boundaries (e.g., DBInstanceClassChanging → db_instance_class_changing).
 func toSnakeCase(s string) string {
 	runes := []rune(s)
 	var b strings.Builder
@@ -170,8 +160,6 @@ func pickEndpoint(netInfos []*alibabards.DescribeDBInstanceNetInfoResponseBodyDB
 	return "-", 0
 }
 
-// toListedDBInstance converts a DescribeDBInstances item into the CSP-agnostic
-// model, applying status normalization and keeping the engine name as-is.
 func toListedDBInstance(item *alibabards.DescribeDBInstancesResponseBodyItemsDBInstance, endpoint string, port int32, region string) models.DBInstance {
 	name := tea.StringValue(item.DBInstanceDescription)
 	if name == "" {
@@ -197,10 +185,10 @@ func (p *AlibabaProvider) instanceEndpoint(instanceID string) (string, int32, er
 		DBInstanceId: tea.String(instanceID),
 	})
 	if err != nil {
-		return "", 0, err
+		return "-", 0, err
 	}
 	if resp == nil || resp.Body == nil || resp.Body.DBInstanceNetInfos == nil {
-		return "", 0, nil
+		return "-", 0, nil
 	}
 	ep, port := pickEndpoint(resp.Body.DBInstanceNetInfos.DBInstanceNetInfo)
 	return ep, port, nil
@@ -240,14 +228,16 @@ func (p *AlibabaProvider) ListInstances(ctx context.Context) ([]models.DBInstanc
 	return out, nil
 }
 
-// DeleteInstance deletes an RDS instance without retaining any backup. The response
-// has no instance details, so the returned model is constructed locally.
 func (p *AlibabaProvider) DeleteInstance(ctx context.Context, instanceID string) (models.DBInstance, error) {
 	_, err := p.client.DeleteDBInstance(&alibabards.DeleteDBInstanceRequest{
 		DBInstanceId:       tea.String(instanceID),
 		ReleasedKeepPolicy: tea.String("None"),
 	})
 	if err != nil {
+		var sdkErr *tea.SDKError
+		if errors.As(err, &sdkErr) && sdkErr.StatusCode != nil && *sdkErr.StatusCode == 404 {
+			return models.DBInstance{Provider: "alibaba", InstanceID: instanceID, Status: "deleted", Region: p.region}, nil
+		}
 		return models.DBInstance{}, fmt.Errorf("failed to delete Alibaba RDS instance: %w", err)
 	}
 	return models.DBInstance{
@@ -314,8 +304,6 @@ func zoneIDs(body *alibabards.DescribeAvailableZonesResponseBody) []string {
 	return distinctSorted(ids)
 }
 
-// ListEngineVersions returns available engine versions for the supported engines,
-// queried per engine and merged.
 func (p *AlibabaProvider) ListEngineVersions(ctx context.Context) ([]models.DBEngineVersion, error) {
 	var out []models.DBEngineVersion
 	for _, engine := range supportedEngines {
@@ -337,8 +325,6 @@ func (p *AlibabaProvider) ListEngineVersions(ctx context.Context) ([]models.DBEn
 // Alibaba supports only these three; we brute-force (zone × storageType).
 var storageTypes = []string{"cloud_ssd", "cloud_essd"}
 
-// ListInstanceClasses returns the orderable instance classes for engine+version
-// under the Basic category, gathered across all zones in the region.
 func (p *AlibabaProvider) ListInstanceClasses(ctx context.Context, engine, engineVersion string) ([]string, error) {
 	zonesResp, err := p.client.DescribeAvailableZones(&alibabards.DescribeAvailableZonesRequest{
 		RegionId:      tea.String(p.region),
@@ -383,4 +369,14 @@ func (p *AlibabaProvider) ListInstanceClasses(ctx context.Context, engine, engin
 	}
 
 	return distinctSorted(classes), nil
+}
+
+func (p *AlibabaProvider) CreateAccount(instanceID, username, password string) error {
+	_, err := p.client.CreateAccount(&alibabards.CreateAccountRequest{
+		DBInstanceId:    tea.String(instanceID),
+		AccountName:     tea.String(username),
+		AccountPassword: tea.String(password),
+		AccountType:     tea.String("Super"),
+	})
+	return err
 }

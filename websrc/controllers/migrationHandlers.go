@@ -44,9 +44,11 @@ func MigrationObjectstoragePostHandler(ctx echo.Context) error {
 
 	params := models.DataTask{}
 	if !getDataWithReBind(logger, start, ctx, &params) {
-		return ctx.JSON(http.StatusInternalServerError, models.BasicResponse{
+		errStr := "Invalid request data"
+		logger.Error().Msg(errStr)
+		return ctx.JSON(http.StatusBadRequest, models.BasicResponse{
 			Result: logstrings.String(),
-			Error:  nil,
+			Error:  &errStr,
 		})
 	}
 
@@ -89,9 +91,10 @@ func MigrationNRDBMSPostHandler(ctx echo.Context) error {
 
 	params := models.DataTask{}
 	if !getDataWithReBind(logger, start, ctx, &params) {
-		return ctx.JSON(http.StatusInternalServerError, models.BasicResponse{
+		errStr := "Invalid request data"
+		return ctx.JSON(http.StatusBadRequest, models.BasicResponse{
 			Result: logstrings.String(),
-			Error:  nil,
+			Error:  &errStr,
 		})
 	}
 	params.TaskMeta.TaskID = params.OperationId
@@ -133,9 +136,10 @@ func MigrationRDBMSPostHandler(ctx echo.Context) error {
 
 	params := models.DataTask{}
 	if !getDataWithReBind(logger, start, ctx, &params) {
-		return ctx.JSON(http.StatusInternalServerError, models.BasicResponse{
+		errStr := "Invalid request data"
+		return ctx.JSON(http.StatusBadRequest, models.BasicResponse{
 			Result: logstrings.String(),
-			Error:  nil,
+			Error:  &errStr,
 		})
 	}
 	params.TaskMeta.TaskID = params.OperationId

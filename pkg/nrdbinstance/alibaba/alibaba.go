@@ -3,6 +3,7 @@ package alibaba
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -197,12 +198,15 @@ func (p *AlibabaProvider) DeleteInstance(_ context.Context, instanceID string) (
 		DBInstanceId: tea.String(instanceID),
 	})
 	if err != nil {
+		var sdkErr *tea.SDKError
+		if errors.As(err, &sdkErr) && sdkErr.StatusCode != nil && *sdkErr.StatusCode == 404 {
+			return models.NRDBInstance{Provider: "alibaba", InstanceID: instanceID, Status: "deleted", Region: p.region}, nil
+		}
 		return models.NRDBInstance{}, fmt.Errorf("failed to delete Alibaba MongoDB instance: %w", err)
 	}
 	return models.NRDBInstance{
 		Provider:   "alibaba",
 		InstanceID: instanceID,
-		Name:       instanceID,
 		Status:     "deleting",
 		Region:     p.region,
 	}, nil

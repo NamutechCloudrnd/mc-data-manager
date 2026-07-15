@@ -158,6 +158,8 @@ func InitServer(port string, addIP ...string) *echo.Echo {
 	// 데이터베이스 마이그레이션 실행
 	if err := config.DB.AutoMigrate(
 		&models.Credential{},
+		&models.RDBInstanceRecord{},
+		&models.NRDBInstanceRecord{},
 	); err != nil {
 		log.Error().Msgf("Failed to migrate database: %v", err)
 	}

@@ -278,3 +278,46 @@ func ListRDBDatabasesHandler(ctx echo.Context) error {
 
 	return ctx.JSON(http.StatusOK, dbList)
 }
+
+// CreateRDBAccountHandler godoc
+//
+//	@ID			CreateRDBAccountHandler
+//	@Summary	Create the master account on an existing Alibaba RDB instance
+//	@Description	Retries master account creation for an Alibaba RDS instance whose
+//	@Description	background account creation failed. Not supported for other CSPs.
+//	@Tags			[RDB Instance]
+//	@Accept			json
+//	@Produce		json
+//	@Param			RequestBody	body		models.RDBAccountCreateRequest	true	"Provider, region, instanceId, masterUsername, masterPassword"
+//	@Success		200			{object}	map[string]string				"Account created"
+//	@Failure		400			{object}	map[string]string				"Invalid Request"
+//	@Failure		500			{object}	map[string]string				"Internal Server Error"
+//	@Router			/db/rdbms/account [put]
+func CreateRDBAccountHandler(c echo.Context) error {
+	var req models.RDBAccountCreateRequest
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+	}
+	if req.Provider == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "provider is required"})
+	}
+	if req.Region == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "region is required"})
+	}
+	if req.InstanceID == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "instanceId is required"})
+	}
+	if req.MasterUsername == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "masterUsername is required"})
+	}
+	if req.MasterPassword == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "masterPassword is required"})
+	}
+
+	if err := rdbinstance.CreateAccount(c.Request().Context(), req.Provider, req.Region, req.InstanceID, req.MasterUsername, req.MasterPassword); err != nil {
+		log.Error().Err(err).Str("provider", req.Provider).Str("instanceId", req.InstanceID).Msg("create RDB account failed")
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+
+	return c.JSON(http.StatusOK, map[string]string{"result": "account created"})
+}
