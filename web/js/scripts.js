@@ -10,20 +10,6 @@
 // for mc-data-manger
 window.addEventListener('DOMContentLoaded', event => {
 
-    // Toggle the side navigation
-    const sidebarToggle = document.body.querySelector('#sidebarToggle');
-    if (sidebarToggle) {
-        // Uncomment Below to persist sidebar toggle between refreshes
-        // if (localStorage.getItem('sb|sidebar-toggle') === 'true') {
-        //     document.body.classList.toggle('sb-sidenav-toggled');
-        // }
-        sidebarToggle.addEventListener('click', event => {
-            event.preventDefault();
-            document.body.classList.toggle('sb-sidenav-toggled');
-            localStorage.setItem('sb|sidebar-toggle', document.body.classList.contains('sb-sidenav-toggled'));
-        });
-    }
-
     if (document.getElementById('genForm')) {
         generateFormSubmit();
         loadProfileList();
@@ -92,7 +78,40 @@ const TaskProgress = (() => {
             .catch(() => clear());
     }
 
-    return { newOpId, save, clear, resume };
+    function setResult(text) {
+        resultCollpase();
+        const rt = document.getElementById('resultText');
+        if (rt) rt.value = text;
+    }
+
+    // migrate/backup/restore가 쓰는 표준 복원 UI — 셋 다 동작이 같아 여기에 둔다.
+    // 진행 중이면 스피너 + 안내, 끝났으면 결과 문구를 Result 패널에 넣는다.
+    function attach(kind) {
+        resume(kind,
+            () => { loadingButtonOn(); setResult('In progress.. (refresh to update the status)'); },
+            text => { setResult(text); loadingButtonOff(); });
+    }
+
+    // 표준 제출 — opId를 심어 저장한 뒤 POST한다.
+    // 작업이 수십 분 걸릴 수 있어 요청이 커넥션 타임아웃으로 끊길 수 있다. 그 경우
+    // catch에서 저장을 지우지 않고 남겨, 새로고침 시 attach(kind)가 상태를 복원한다.
+    function submit(kind, url, jsonData) {
+        const opId = newOpId(kind);
+        jsonData.operationId = opId;
+        save(kind, opId);
+
+        return fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(jsonData),
+        })
+            .then(response => response.json().catch(() => ({})))
+            .then(json => { setResult((json && json.Result) || ''); clear(); })
+            .catch(reason => { console.error(kind + ' request dropped:', reason); })
+            .finally(() => { loadingButtonOff(); });
+    }
+
+    return { newOpId, save, clear, resume, attach, submit };
 })();
 
 // Result 패널을 항상 "펼침"으로 (toggle이 아니라 show — 이미 펼쳐져 있으면 유지).
@@ -147,21 +166,7 @@ function getInputValue(id) {
     return value !== "" ? value : null;
 }
 
-const ALIBABA_ENDPOINTS = Object.freeze({
-    "oss-cn-hangzhou": "https://oss-cn-hangzhou.aliyuncs.com",
-    "oss-cn-beijing": "https://oss-cn-beijing.aliyuncs.com",
-    "oss-cn-shanghai": "https://oss-cn-shanghai.aliyuncs.com",
-    "oss-cn-shenzhen": "https://oss-cn-shenzhen.aliyuncs.com",
-    "oss-ap-northeast-1": "https://oss-ap-northeast-1.aliyuncs.com",
-    "oss-ap-southeast-1": "https://oss-ap-southeast-1.aliyuncs.com",
-    "oss-ap-southeast-2": "https://oss-ap-southeast-2.aliyuncs.com",
-    "oss-ap-southeast-3": "https://oss-ap-southeast-3.aliyuncs.com",
-    "oss-ap-south-1": "https://oss-ap-south-1.aliyuncs.com",
-    "oss-eu-central-1": "https://oss-eu-central-1.aliyuncs.com",
-    "oss-eu-west-1": "https://oss-eu-west-1.aliyuncs.com",
-    "oss-us-east-1": "https://oss-us-east-1.aliyuncs.com",
-    "oss-us-west-1": "https://oss-us-west-1.aliyuncs.com",
-});
+const NCP_OBJECTSTORAGE_ENDPOINT = "https://kr.object.ncloudstorage.com";
 
 function resolveAlibabaEndpoint(region) {
     if (!region) {
@@ -169,6 +174,18 @@ function resolveAlibabaEndpoint(region) {
     }
     const normalized = region.trim().toLowerCase();
     return `https://oss-${normalized}.aliyuncs.com`;
+}
+
+// ncp/alibaba는 endpoint가 필수인데 폼에 비어 있을 수 있어 provider 규칙으로 채운다.
+// 그 외 provider는 endpoint 개념이 없다 → 호출부에서 제거한다.
+// point: { provider, region, endpoint } 를 제자리에서 수정한다.
+function ensureEndpoint(point) {
+    if (!point || point.endpoint) return;
+    if (point.provider === "ncp") {
+        point.endpoint = NCP_OBJECTSTORAGE_ENDPOINT;
+    } else if (point.provider === "alibaba") {
+        point.endpoint = resolveAlibabaEndpoint(point.region);
+    }
 }
 
 // 버킷 리전 후보들을 Region 셀렉트 옵션과 대소문자 무시로 매칭해 실제 옵션 값을 돌려준다.
@@ -212,7 +229,6 @@ function generateFormSubmit() {
         requestBody.targetPoint = {
             ...jsonData
         };
-        console.log(JSON.stringify(jsonData))
 
         requestBody.targetPoint.provider = document.getElementById('targetPoint[provider]')?.value;
         
@@ -236,11 +252,8 @@ function generateFormSubmit() {
             delete requestBody["targetPoint[endpoint]"];
         }
         
-        if (requestBody.targetPoint.provider === "ncp" && !requestBody.targetPoint.endpoint) {
-            requestBody.targetPoint.endpoint = "https://kr.object.ncloudstorage.com"
-        } else if (requestBody.targetPoint.provider === "alibaba" && !requestBody.targetPoint.endpoint) {
-            requestBody.targetPoint.endpoint = resolveAlibabaEndpoint(requestBody.targetPoint.region)
-        } else if (!["ncp", "alibaba"].includes(requestBody.targetPoint.provider)) {
+        ensureEndpoint(requestBody.targetPoint);
+        if (!["ncp", "alibaba"].includes(requestBody.targetPoint.provider)) {
             delete requestBody.targetPoint.endpoint
         }
 
@@ -266,10 +279,7 @@ function generateFormSubmit() {
                 return response.json();
             })
             .then(json => {
-                const resultText = document.getElementById('resultText');
-                resultText.value = json.Result;
-                console.log(json);
-                console.log("Generate done.");
+                document.getElementById('resultText').value = json.Result;
             })
             .catch(reason => {
                 console.error("Error during generate:", reason);
@@ -278,8 +288,6 @@ function generateFormSubmit() {
             .finally(() => {
                 loadingButtonOff();
             });
-
-        console.log("Generate progressing...");
     });
 }
 
@@ -484,17 +492,6 @@ function credentialFormSubmit() {
                 }
             };
         }
-        // jsonData = convertCheckboxParams(jsonData)
-        // jsonData.targetPoint = {
-        //     ...jsonData
-        // };
-        console.log('credentialFormSubmit jsonData: ', jsonData)
-        // jsonData.targetPoint.provider = document.getElementById('provider').value;
-        // const target = document.getElementById('genTarget').value;
-        // jsonData.dummy = jsonData.targetPoint
-        // if ((jsonData.targetPoint.provider == "ncp") && (jsonData.targetPoint.endpoint == "")) {
-        //     jsonData.targetPoint.endpoint = "https://kr.object.ncloudstorage.com"
-        // }
         const url = "/credentials";
 
         let req;
@@ -509,29 +506,21 @@ function credentialFormSubmit() {
 
         fetch(url, req)
             .then(response => {
-                console.log(response);
-                
                 if (!response.ok) {
                     throw new Error('Network response was not ok');
                 }
                 return response.json();
             })
             .then(json => {
-                const resultText = document.getElementById('resultText');
-                // resultText.value = json.Result;
-                resultText.value = json && 'Success';
-                console.log(json);
-                console.log("Generate done.");
+                document.getElementById('resultText').value = json && 'Success';
             })
             .catch(reason => {
-                console.error("Error during generate:", reason);
+                console.error("Error during credential submit:", reason);
                 alert(reason.message || reason);
             })
             .finally(() => {
                 loadingButtonOff();
             });
-
-        console.log("Generate progressing...");
     });
 }
 
@@ -543,9 +532,7 @@ function setFilterAccordion() {
 
 function setPicker() {
     $( function() {
-        // $("#datepicker1").datepicker();
-        // $("#datepicker2").datepicker();
-        $("#datepicker1").datetimepicker({ 
+        $("#datepicker1").datetimepicker({
             format: "Y-m-d H:i:s",
             step: 1,
         });
@@ -580,18 +567,7 @@ function applyDbProviderExclusion(selectEl, isDbService) {
 }
 
 function loadProfileList() {
-    let url = "/credentials";
-    let req;
-
-        req = {
-            method: 'GET',
-            // headers: {
-            //     'Content-Type': 'application/json'
-            // },
-            // body: JSON.stringify(jsonData)
-        };
-
-        fetch(url, req)
+        fetch("/credentials")
             .then(response => {
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
                 return response.json();
@@ -619,46 +595,23 @@ function loadProfileList() {
                     }
                 });
 
-                const sourceSelectElement = document.getElementById("sourceCredentialSelect");
-
-                if (sourceSelectElement) {
-                    // placeholder 역할 옵션 추가
-                    // const placeholder = document.createElement("option");
-                    // placeholder.textContent = "Select Credential";
-                    // placeholder.disabled = true;
-                    // placeholder.selected = true;
-                    // awsSelect.appendChild(placeholder);
-
+                // source/target 중 페이지에 있는 것만 채운다 (generate/backup은 한쪽만 있음).
+                // credential이 1개뿐이면 자동 선택 + change를 쏴서 region/목록 로드를 태운다.
+                ["sourceCredentialSelect", "targetCredentialSelect"].forEach(id => {
+                    const selectEl = document.getElementById(id);
+                    if (!selectEl) return;
                     options.forEach(optionData => {
                         const option = document.createElement("option");
                         option.value = optionData.value;
                         option.textContent = optionData.label;
                         option.setAttribute("data-provider", optionData.provider);
-                        sourceSelectElement.appendChild(option);
+                        selectEl.appendChild(option);
                     });
                     if (options.length === 1) {
-                        sourceSelectElement.selectedIndex = 1;
-                        sourceSelectElement.dispatchEvent(new Event('change'));
+                        selectEl.selectedIndex = 1;
+                        selectEl.dispatchEvent(new Event('change'));
                     }
-                }
-
-                const targetSelectElement = document.getElementById("targetCredentialSelect");
-
-                if (targetSelectElement) {
-                    options.forEach(optionData => {
-                        const option = document.createElement("option");
-                        option.value = optionData.value;
-                        option.textContent = optionData.label;
-                        option.setAttribute("data-provider", optionData.provider);
-                        targetSelectElement.appendChild(option);
-                    });
-                    if (options.length === 1) {
-                        targetSelectElement.selectedIndex = 1;
-                        targetSelectElement.dispatchEvent(new Event('change'));
-                    }
-                }
-
-                // console.log('options: ', options);
+                });
 
                 const capSelect = document.getElementById("mig-filter-sizeFilteringUnit");
 
@@ -678,13 +631,6 @@ function loadProfileList() {
                 ]
 
                 if (capSelect) {
-                    // placeholder 역할 옵션 추가
-                    // const placeholder = document.createElement("option");
-                    // placeholder.textContent = "Select Unit";
-                    // placeholder.disabled = true;
-                    // placeholder.selected = true;
-                    // capSelect.appendChild(placeholder);
-
                     capOptions.forEach(optionData => {
                         const option = document.createElement("option");
                         option.value = optionData.value;
@@ -692,19 +638,9 @@ function loadProfileList() {
                         capSelect.appendChild(option);
                     });
                 }
-                
-
-                // window.mcmpData = {                    
-                //     profileList: json,
-                //     profileOptions: options
-                // };                
-
-                // console.log('window mcmpData: ', window.mcmpData);
-                
-                // console.log("migration done.");
             })
             .catch(reason => {
-                console.log(reason);
+                console.error('loadProfileList:', reason);
                 alert(reason);
             });
 }
@@ -752,45 +688,13 @@ function migrationFormSubmit() {
 
         let url = "/migrate/" + service;
 
-        const ensureEndpoint = (point) => {
-            if (!point) return;
-            if (point.provider == "ncp" && !point.endpoint) {
-                point.endpoint = "https://kr.object.ncloudstorage.com";
-            } else if (point.provider == "alibaba" && !point.endpoint) {
-                point.endpoint = resolveAlibabaEndpoint(point.region);
-            }
-        };
         ensureEndpoint(jsonData.targetPoint);
         ensureEndpoint(jsonData.sourcePoint);
 
-        // 마이그레이션은 수십 분 걸릴 수 있어 단일 요청 응답만 기다리면 커넥션 타임아웃 시
-        // 스피너가 무한정 돌고 결과를 못 받는다. 백엔드는 요청 시작 시 이 operationId를 TaskID로
-        // task를 등록하고 완료 시 상태를 갱신하므로, GET /migrate/:id 로 상태를 폴링해 완료를 감지한다.
-        // 복귀 복원용 opId 저장 (폴링 없음).
-        const opId = TaskProgress.newOpId('migrate');
-        jsonData.operationId = opId;
-        TaskProgress.save('migrate', opId);
-
-        const req = {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(jsonData)
-        };
-
-        fetch(url, req)
-            .then(response => response.json().catch(() => ({})))
-            .then(json => {
-                document.getElementById('resultText').value = (json && json.Result) || '';
-                TaskProgress.clear();
-            })
-            .catch(reason => { console.log('migration request dropped:', reason); }) // 저장 보존 → 새로고침 시 복원
-            .finally(() => { loadingButtonOff(); });
+        TaskProgress.submit('migrate', url, jsonData);
     });
 
-    // 복귀 시 1회 조회로 복원
-    TaskProgress.resume('migrate',
-        () => { loadingButtonOn(); resultCollpase(); document.getElementById('resultText').value = 'In progress.. (refresh to update the status)'; },
-        (text) => { resultCollpase(); document.getElementById('resultText').value = text; loadingButtonOff(); });
+    TaskProgress.attach('migrate');   // 복귀 시 1회 조회로 복원
 }
 
 function applyFilter(jsonData) {
@@ -835,19 +739,6 @@ function applyFilter(jsonData) {
         jsonData.sourceFilter.exact = null;
     }
 
-    console.log(
-        "minSize type:", typeof jsonData.sourceFilter.minSize, 
-        "value:", jsonData.sourceFilter.minSize
-    );
-    console.log(
-        "maxSize type:", typeof jsonData.sourceFilter.maxSize, 
-        "value:", jsonData.sourceFilter.maxSize
-    );
-
-    console.log(
-        "contains type:", typeof jsonData.sourceFilter.contains, 
-        "value:", jsonData.sourceFilter.contains
-    );
 }
 
 function backUpFormSubmit() {
@@ -874,53 +765,22 @@ function backUpFormSubmit() {
         } else {
             delete jsonData.sourceFilter;
         }
-        // console.log(provider)
-
         loadingButtonOn();
         resultCollpase();
 
         let url = "/backup/" + service;
-        console.log(url);
 
         jsonData.sourcePoint.credentialId = parseInt(jsonData.sourcePoint.credentialId);
         jsonData.sourcePoint.provider = provider
-        // console.log(jsonData)
 
         if (service == "objectstorage") {
-            if (provider == "ncp" && !jsonData.sourcePoint.endpoint) {
-                jsonData.sourcePoint.endpoint = "https://kr.object.ncloudstorage.com"
-            } else if (provider == "alibaba" && !jsonData.sourcePoint.endpoint) {
-                jsonData.sourcePoint.endpoint = resolveAlibabaEndpoint(jsonData.sourcePoint.region)
-            }
+            ensureEndpoint(jsonData.sourcePoint);
         }
 
-        // 복귀 복원용 opId 저장 (폴링 없음).
-        const opId = TaskProgress.newOpId('backup');
-        jsonData.operationId = opId;
-        TaskProgress.save('backup', opId);
-
-        let req = {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(jsonData)
-        };
-
-        fetch(url, req)
-            .then(response => response.json().catch(() => ({})))
-            .then(json => {
-                document.getElementById('resultText').value = (json && json.Result) || '';
-                TaskProgress.clear();
-            })
-            .catch(reason => { console.log('backup request dropped:', reason); })
-            .finally(() => { loadingButtonOff(); });
+        TaskProgress.submit('backup', url, jsonData);
     });
 
-    // 복귀 시 1회 조회로 복원
-    TaskProgress.resume('backup',
-        () => { loadingButtonOn(); resultCollpase(); document.getElementById('resultText').value = 'In progress.. (refresh to update the status)'; },
-        (text) => { resultCollpase(); document.getElementById('resultText').value = text; loadingButtonOff(); });
+    TaskProgress.attach('backup');   // 복귀 시 1회 조회로 복원
 }
 
 function RestoreFormSubmit() {
@@ -947,191 +807,71 @@ function RestoreFormSubmit() {
         resultCollpase();
 
         let url = "/restore/" + service;
-        console.log(url);
-        console.log(jsonData)
 
         jsonData.targetPoint.credentialId = parseInt(jsonData.targetPoint.credentialId);
         jsonData.targetPoint.provider = provider       
 
         if(service == "objectstorage") {
-            if (provider == "ncp" && !jsonData.targetPoint.endpoint) {
-                jsonData.targetPoint.endpoint = "https://kr.object.ncloudstorage.com"
-            } else if (provider == "alibaba" && !jsonData.targetPoint.endpoint) {
-                jsonData.targetPoint.endpoint = resolveAlibabaEndpoint(jsonData.targetPoint.region)
-            }
+            ensureEndpoint(jsonData.targetPoint);
         }
 
-        // 복귀 복원용 opId 저장 (폴링 없음).
-        const opId = TaskProgress.newOpId('restore');
-        jsonData.operationId = opId;
-        TaskProgress.save('restore', opId);
-
-        let req = {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(jsonData)
-        };
-
-        fetch(url, req)
-            .then(response => response.json().catch(() => ({})))
-            .then(json => {
-                document.getElementById('resultText').value = (json && json.Result) || '';
-                TaskProgress.clear();
-            })
-            .catch(reason => { console.log('restore request dropped:', reason); })
-            .finally(() => { loadingButtonOff(); });
+        TaskProgress.submit('restore', url, jsonData);
     });
 
-    // 복귀 시 1회 조회로 복원
-    TaskProgress.resume('restore',
-        () => { loadingButtonOn(); resultCollpase(); document.getElementById('resultText').value = 'In progress.. (refresh to update the status)'; },
-        (text) => { resultCollpase(); document.getElementById('resultText').value = text; loadingButtonOff(); });
+    TaskProgress.attach('restore');   // 복귀 시 1회 조회로 복원
 }
 
-document.addEventListener('DOMContentLoaded', function () {
-    const clearServiceLink = document.getElementById('clearServiceLink');
-
-    if (clearServiceLink) {
-        clearServiceLink.addEventListener('click', function (event) {
+// 헤더 드롭다운의 서비스 생성/삭제 — confirm → 요청 → 결과 alert.
+// clearServiceLink('/service/clearAll')는 header.html에서 링크가 주석 처리돼
+// 도달 불가능하므로 핸들러를 두지 않는다. 링크를 되살리면 아래 배열에 추가할 것.
+document.addEventListener('DOMContentLoaded', () => {
+    [
+        {
+            id: 'genServiceLink', url: '/service/apply', method: 'POST',
+            confirm: 'Are you sure you want to create a data-related service?',
+            ok: 'Service creation request has been submitted.',
+            fail: 'An error occurred while submitting the service creation request.',
+        },
+        {
+            id: 'delServiceLink', url: '/service/destroy', method: 'DELETE',
+            confirm: 'Are you sure you want to remove the data-related service?',
+            ok: 'Service removal request has been submitted.',
+            fail: 'An error occurred while submitting the service removal request.',
+        },
+    ].forEach(cfg => {
+        const link = document.getElementById(cfg.id);
+        if (!link) return;
+        link.addEventListener('click', async event => {
             event.preventDefault();
-
-            const userConfirmed = confirm('Are you sure you want to clear all services?');
-            if (!userConfirmed) {
-                return;
-            }
-
-            fetch('/service/clearAll', {
-                method: 'DELETE',
-                headers: {
-                    'Content-Type': 'application/json'
-                }
-            })
-                .then(response => {
-                    if (response.ok) {
-                        alert('The service has been successfully cleared.');
-                    } else {
-                        return response.json().then(data => {
-                            throw new Error(data.message || 'An error occurred while clearing the service.');
-                        });
-                    }
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    alert(`Error: ${error.message}`);
+            if (!confirm(cfg.confirm)) return;
+            try {
+                const res = await fetch(cfg.url, {
+                    method: cfg.method,
+                    headers: { 'Content-Type': 'application/json' },
                 });
+                if (!res.ok) {
+                    const data = await res.json().catch(() => ({}));
+                    throw new Error(data.message || cfg.fail);
+                }
+                alert(cfg.ok);
+            } catch (error) {
+                console.error(cfg.id + ':', error);
+                alert(`Error: ${error.message}`);
+            }
         });
-    } 
+    });
 });
 
-document.addEventListener('DOMContentLoaded', function () {
-    const genServiceLink = document.getElementById('genServiceLink');
-
-    if (genServiceLink) {
-        genServiceLink.addEventListener('click', function (event) {
-            event.preventDefault();
-
-            const userConfirmed = confirm('Are you sure you want to create a data-related service?');
-            if (!userConfirmed) {
-                return;
-            }
-
-            fetch('/service/apply', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                }
-            })
-                .then(response => {
-                    if (response.ok) {
-                        alert('Service creation request has been submitted.');
-                    } else {
-                        return response.json().then(data => {
-                            throw new Error(data.message || 'An error occurred while submitting the service creation request.');
-                        });
-                    }
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    alert(`Error: ${error.message}`);
-                });
-        });
-    } else {
-        console.error('Gen Service link not found.');
-    }
-});
-
-
-document.addEventListener('DOMContentLoaded', function () {
-    const delServiceLink = document.getElementById('delServiceLink');
-
-    if (delServiceLink) {
-        delServiceLink.addEventListener('click', function (event) {
-            event.preventDefault();
-
-            const userConfirmed = confirm('Are you sure you want to remove the data-related service?');
-            if (!userConfirmed) {
-                return;
-            }
-
-            fetch('/service/destroy', {
-                method: 'DELETE',
-                headers: {
-                    'Content-Type': 'application/json'
-                }
-            })
-                .then(response => {
-                    if (response.ok) {
-                        alert('Service removal request has been submitted.');
-                    } else {
-                        return response.json().then(data => {
-                            throw new Error(data.message || 'An error occurred while submitting the service removal request.');
-                        });
-                    }
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    alert(`Error: ${error.message}`);
-                });
-        });
-    } else {
-        console.error('Del Service link not found.');
-    }
-});
-
-// for m-cmp/mc-web-console
-
-// message  Info
-// {
-//     accessToken: "accesstokenExample",
-//     workspaceInfo: {
-//         "id": "8b2df1f9-b937-4861-b5ce-855a41c346bc",
-//         "name": "workspace2",
-//         "description": "workspace2 desc",
-//         "created_at": "2024-06-18T00:10:16.192337Z",
-//         "updated_at": "2024-06-18T00:10:16.192337Z"
-//     },
-//     projectInfo: {
-//         "id": "1e88f4ea-d052-4314-80a4-9ac3f6691feb",
-//         "ns_id": "project1",
-//         "name": "project1",
-//         "description": "project1 desc",
-//         "created_at": "2024-06-18T00:28:57.094105Z",
-//         "updated_at": "2024-06-18T00:28:57.094105Z"
-//     },
-//     operationId: "abc"
-// };
-
+// m-cmp/mc-web-console이 iframe으로 감쌀 때 postMessage로 보내는 payload를 받는다.
+// 페이로드에는 accessToken/workspaceInfo/projectInfo/operationId가 들어오지만
+// 이 앱이 쓰는 건 projectInfo.ns_id 하나뿐이다 (→ 서버의 런타임 namespace로 세팅).
 window.addEventListener("message", async function (event) {
     const data = event.data;
-    console.log("iframeServer : Message received :", data);
     try {
         const nsId = data?.projectInfo?.ns_id;
         if (!nsId) return;
 
         sessionStorage.setItem("nsId", nsId);
-        console.log("iframeServer : nsId set :", nsId);
 
         await fetch("/namespace", {
             method: "POST",
@@ -1245,13 +985,6 @@ document.addEventListener("DOMContentLoaded", () => {
     ["source", "target"].forEach(initProviderHandlers);
 });
 
-function ucFirst(str) {
-    if (!str) {
-      return "";
-    }
-    return str.charAt(0).toUpperCase() + str.slice(1);
-}
-
 function getServiceName(service, provider) {
     if (provider === "none") return "-";
   
@@ -1300,6 +1033,98 @@ new MutationObserver(muts => {
 }).observe(document.body, { subtree: true, attributes: true, attributeFilter: ['class'] });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 공용 유틸 — 페이지별 중복 구현 금지
+//
+// 페이지 인라인 스크립트는 DOMContentLoaded 안에서 실행되므로(footer.html이
+// scripts.js를 로드한 뒤 fire) 여기 정의된 전역을 안전하게 참조할 수 있다.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// HTML 이스케이프. 속성값에 넣는 경우가 있어 큰따옴표까지 치환한다.
+window.escHtml = function (s) {
+    return String(s == null ? '—' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+};
+
+// DB 인스턴스(rdbms/nrdbms) 상태 뱃지.
+// 버킷 상태는 의미가 달라(생성 중 개념 없음) BucketPanel 내부본을 쓴다.
+window.instanceStatusBadge = function (status) {
+    const s = (status || '').toLowerCase();
+    if (s === 'available') {
+        return `<span class="text-success small"><i class="bi bi-check-circle-fill me-1"></i>available</span>`;
+    }
+    if (s === 'deleting') {
+        return `<span class="text-danger small"><span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>deleting</span>`;
+    }
+    if (s === 'failed') {
+        return `<span class="text-danger small"><i class="bi bi-x-circle-fill me-1"></i>failed</span>`;
+    }
+    // 그 외 상태(net_creating 등)는 API가 반환한 값을 그대로 표시한다
+    return `<span class="text-primary small"><i class="bi bi-hourglass-split ic-spin me-1"></i>${window.escHtml(s || '-')}</span>`;
+};
+
+// credential select가 채워질 때까지 대기한다.
+// loadCredentialList()가 비동기로 option을 채우므로, 저장된 상태 복원 전에 기다려야 한다.
+// 3초 내에 안 채워지면 그냥 진행한다(무한 대기 방지).
+window.waitForCredentials = function (selectEl) {
+    return new Promise(resolve => {
+        if (!selectEl || selectEl.options.length > 1) { resolve(); return; }
+        const obs = new MutationObserver(() => {
+            if (selectEl.options.length > 1) { obs.disconnect(); resolve(); }
+        });
+        obs.observe(selectEl, { childList: true });
+        setTimeout(() => { obs.disconnect(); resolve(); }, 3000);
+    });
+};
+
+// 행 선택 시 Region 셀렉트를 인스턴스 region과 대소문자 무시로 동기화 (auto-select).
+// rows에서 instanceId로 인스턴스를 찾아 그 region과 일치하는 option을 고른다.
+//
+// ⚠️ change 이벤트를 dispatch하지 않는다 — dispatch하면 목록이 리로드되어
+//    방금 한 행 선택이 풀린다. 이 제약을 깨지 말 것.
+window.autoSelectRegion = function (rows, instanceId, regionSel) {
+    const inst = (rows || []).find(i => i.instanceId === instanceId);
+    if (!inst || !inst.region || !regionSel) return;
+    const opt = [...regionSel.options].find(o => (o.value || '').toLowerCase() === String(inst.region).toLowerCase());
+    if (opt && regionSel.value !== opt.value) regionSel.value = opt.value;
+};
+
+// 페이지네이션 렌더 공용. container에 <nav>를 그리고 클릭 시 onPage(p)를 호출한다.
+//
+// ⚠️ totalPages는 '페이지 수'다 — 아이템 수를 넘기지 말 것.
+//    아이템 수밖에 없으면 호출부에서 Math.ceil(items / PAGE_SIZE) || 1 로 변환한다.
+// 페이지가 7개를 넘으면 생략부호(…)로 접고 이전/다음(‹ ›)을 붙인다.
+window.renderPagination = function (container, totalPages, current, onPage) {
+    if (!container) return;
+    if (totalPages <= 1) { container.innerHTML = ''; return; }
+    const range = [];
+    if (totalPages <= 7) {
+        for (let p = 1; p <= totalPages; p++) range.push(p);
+    } else {
+        range.push(1);
+        if (current > 3) range.push('...');
+        const s = Math.max(2, current - 1), e = Math.min(totalPages - 1, current + 1);
+        for (let p = s; p <= e; p++) range.push(p);
+        if (current < totalPages - 2) range.push('...');
+        range.push(totalPages);
+    }
+    const prev = `<li class="page-item ${current === 1 ? 'disabled' : ''}"><a class="page-link" href="#" data-page="${current - 1}">‹</a></li>`;
+    const next = `<li class="page-item ${current === totalPages ? 'disabled' : ''}"><a class="page-link" href="#" data-page="${current + 1}">›</a></li>`;
+    const pages = range.map(p =>
+        p === '...'
+            ? `<li class="page-item disabled"><span class="page-link">…</span></li>`
+            : `<li class="page-item ${p === current ? 'active' : ''}"><a class="page-link" href="#" data-page="${p}">${p}</a></li>`
+    ).join('');
+    container.innerHTML = `<nav><ul class="pagination pagination-sm mb-0 justify-content-center">${prev}${pages}${next}</ul></nav>`;
+    container.querySelectorAll('a.page-link').forEach(link => {
+        link.addEventListener('click', e => {
+            e.preventDefault();
+            const p = parseInt(link.dataset.page);
+            if (!isNaN(p) && p >= 1 && p <= totalPages && p !== current) onPage(p);
+        });
+    });
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // BucketPanel — Object Storage 버킷 목록/탐색 공용 컴포넌트
 //
 // gen-object-storage.html의 버킷 테이블 + 가상 폴더 탐색 + 삭제 기능을
@@ -1326,10 +1151,7 @@ const BucketPanel = (() => {
     const PAGE_SIZE = 10;
 
     // ── 공용 헬퍼 ────────────────────────────────────────
-    function esc(s) {
-        return String(s == null ? '—' : s)
-            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-    }
+    const esc = window.escHtml;
     function fmtSize(bytes) {
         const n = Number(bytes);
         if (!isFinite(n) || n < 0) return '—';
@@ -1353,42 +1175,12 @@ const BucketPanel = (() => {
         if (!s) return `<span class="text-muted small">—</span>`;
         return `<span class="text-secondary small">${esc(status)}</span>`;
     }
-    function renderPagination(container, totalPages, current, onPage) {
-        if (totalPages <= 1) { container.innerHTML = ''; return; }
-        const range = [];
-        if (totalPages <= 7) {
-            for (let p = 1; p <= totalPages; p++) range.push(p);
-        } else {
-            range.push(1);
-            if (current > 3) range.push('...');
-            const s = Math.max(2, current - 1), e = Math.min(totalPages - 1, current + 1);
-            for (let p = s; p <= e; p++) range.push(p);
-            if (current < totalPages - 2) range.push('...');
-            range.push(totalPages);
-        }
-        const prev = `<li class="page-item ${current === 1 ? 'disabled' : ''}"><a class="page-link" href="#" data-page="${current - 1}">‹</a></li>`;
-        const next = `<li class="page-item ${current === totalPages ? 'disabled' : ''}"><a class="page-link" href="#" data-page="${current + 1}">›</a></li>`;
-        const pages = range.map(p =>
-            p === '...'
-                ? `<li class="page-item disabled"><span class="page-link">…</span></li>`
-                : `<li class="page-item ${p === current ? 'active' : ''}"><a class="page-link" href="#" data-page="${p}">${p}</a></li>`
-        ).join('');
-        container.innerHTML = `<nav><ul class="pagination pagination-sm mb-0 justify-content-center">${prev}${pages}${next}</ul></nav>`;
-        container.querySelectorAll('a.page-link').forEach(link => {
-            link.addEventListener('click', e => {
-                e.preventDefault();
-                const p = parseInt(link.dataset.page);
-                if (!isNaN(p) && p >= 1 && p <= totalPages && p !== current) onPage(p);
-            });
-        });
-    }
-
     // ── 패널별 targetPoint 구성 (provider별 endpoint 규칙 포함) ──
     function buildTp(panel, extra) {
         const provider = panel.provider.value || '';
         const tp = Object.assign({ provider, region: panel.region.value }, extra || {});
         if (provider === 'ncp') {
-            tp.endpoint = tp.endpoint || panel.endpoint?.value || 'https://kr.object.ncloudstorage.com';
+            tp.endpoint = tp.endpoint || panel.endpoint?.value || NCP_OBJECTSTORAGE_ENDPOINT;
         } else if (provider === 'alibaba') {
             tp.endpoint = tp.endpoint || panel.endpoint?.value || resolveAlibabaEndpoint(tp.region);
         }
@@ -1972,6 +1764,12 @@ const BucketPanel = (() => {
 const InstancePanel = (() => {
     const POLL_MS = 5000;
 
+    // 생성 직후 첫 조회를 늦출 provider (ms). alibaba는 결과적 일관성 때문에
+    // CreateInstance 응답 직후 DescribeDBInstances가 새 인스턴스를 아직 반환하지 않는다
+    // → 첫 틱이 즉시 돌면 "생성했는데 목록 그대로"로 보인다. 첫 틱만 늦추고 이후는 POLL_MS 그대로.
+    // 값은 실측이 아닌 추정치 — 체감이 맞지 않으면 이 숫자만 조정한다.
+    const CREATE_SETTLE_MS = { alibaba: 5000 };
+
     // ── provider별 계정/비밀번호 규칙 (gen-mysql/gen-no-sql과 동일 기준) ──
     // Alibaba: 클라이언트에서는 admin/root/user/test만 금지 (gen-mysql과 동일) —
     // 실제 예약어 위반은 생성 시 CSP API 응답(InvalidAccountName.Forbid)으로 안내된다.
@@ -2366,7 +2164,8 @@ const InstancePanel = (() => {
             const json = await res.json().catch(() => ({}));
             if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
             refs.oc.hide();
-            startPoll(panel, 'create', json.instanceId || body.instanceId);
+            const settle = CREATE_SETTLE_MS[(panel.getProvider() || '').toLowerCase()] || 0;
+            startPoll(panel, 'create', json.instanceId || body.instanceId, settle);
         } catch (err) {
             alert('Failed to create instance: ' + err.message);
         } finally {
@@ -2412,7 +2211,8 @@ const InstancePanel = (() => {
     }
 
     // ── 완료 폴링: 목록을 재조회해 onData로 넘기고, 전이가 끝나면 중단 ──
-    function startPoll(panel, mode, instanceId) {
+    // initialDelayMs: 첫 틱만 지연시킨다 (0/생략이면 기존대로 즉시 실행)
+    function startPoll(panel, mode, instanceId, initialDelayMs) {
         stopPoll();
         const provider = panel.getProvider(), region = panel.getRegion();
         let ticks = 0;
@@ -2439,7 +2239,8 @@ const InstancePanel = (() => {
             } catch (e) { console.error('InstancePanel.poll:', e); }
             pollTimer = setTimeout(tick, POLL_MS);
         }
-        tick();
+        if (initialDelayMs > 0) pollTimer = setTimeout(tick, initialDelayMs);
+        else tick();
     }
     function stopPoll() {
         if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
@@ -2712,14 +2513,3 @@ const SamplePanel = (() => {
 
     return { attach, canOpen, open };
 })();
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 테이블 외부 클릭 시 행 선택 해제 (Bucket/Instance 목록 공통)
-// 선택된 행을 다시 클릭한 것과 동일하게 처리해 각 페이지의 기존 토글 해제
-// 로직(하이라이트 제거·상태 정리)을 그대로 재사용한다.
-// 테이블·오프캔버스·모달·페이지네이션·상호작용 요소 클릭은 선택을 유지한다.
-// ─────────────────────────────────────────────────────────────────────────────
-document.addEventListener('click', e => {
-    if (e.target.closest('table, .offcanvas, .offcanvas-backdrop, .modal, .modal-backdrop, .pagination, .dropdown-menu, .form-select, button, a, input, select, textarea, label')) return;
-    document.querySelectorAll('tbody tr.table-active').forEach(r => r.click());
-});
