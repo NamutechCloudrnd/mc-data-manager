@@ -2369,11 +2369,9 @@ const SamplePanel = (() => {
             oc: bootstrap.Offcanvas.getOrCreateInstance(oc),
             context:       document.getElementById('nsp-context'),
             gcpGroup:      document.getElementById('nsp-gcp-group'),
-            awsGroup:      document.getElementById('nsp-aws-group'),
             accountFields: document.getElementById('nsp-account-fields'),
             dbGroup:       document.getElementById('nsp-db-group'),
             databaseId:    document.getElementById('nsp-databaseId'),
-            instanceId:    document.getElementById('nsp-instanceId'),
             username:      document.getElementById('nsp-username'),
             usernameHelp:  document.getElementById('nsp-username-help'),
             usernameErr:   document.getElementById('nsp-username-error'),
@@ -2389,7 +2387,6 @@ const SamplePanel = (() => {
         });
         refs.password.addEventListener('input', updateSubmit);
         refs.database.addEventListener('input', updateSubmit);
-        refs.instanceId.addEventListener('input', updateSubmit);
         refs.submitBtn.addEventListener('click', submit);
         return refs;
     }
@@ -2420,12 +2417,10 @@ const SamplePanel = (() => {
         refs.context.textContent = sel ? `${cred} / ${sel.name || sel.instanceId}` : cred;
         // kind/provider별 필드 토글
         refs.gcpGroup.classList.toggle('d-none', !(kind === 'nrdbms' && p === 'gcp'));
-        refs.awsGroup.classList.toggle('d-none', !(kind === 'nrdbms' && p === 'aws'));
         refs.accountFields.classList.toggle('d-none', !needsAccount());
         refs.dbGroup.classList.toggle('d-none', !isMongo());
         // 입력 초기화 (열 때마다 빈 폼 — 다른 인스턴스 값 잔존 방지)
         refs.databaseId.value = (kind === 'nrdbms' && p === 'gcp') ? ((sel && sel.instanceId) || '') : '';
-        refs.instanceId.value = '';
         refs.username.value = '';
         refs.usernameErr.classList.add('d-none');
         refs.usernameHelp.textContent = usernameHelp(kind, p);
@@ -2444,7 +2439,7 @@ const SamplePanel = (() => {
         let ok;
         if (kind === 'rdbms') ok = !!un && !!pw; // gen-mysql phase 3와 동일 게이트 (세부 검증은 API 응답)
         else if (p === 'gcp') ok = !!refs.databaseId.value.trim();
-        else if (p === 'aws') ok = !!refs.instanceId.value.trim();
+        else if (p === 'aws') ok = true; // 서버리스(DynamoDB) — 입력 불필요, Provider/Region만으로 생성
         else ok = !!un && !usernameError(kind, p, un) && !!pw && !!refs.database.value.trim();
         refs.submitBtn.disabled = !ok;
     }
@@ -2461,9 +2456,7 @@ const SamplePanel = (() => {
             port:     String(needsAccount() ? (sel?.port || '') : ''),
             username: refs.username.value.trim(),
             password: refs.password.value.trim(),
-            instanceId: (kind === 'nrdbms' && p === 'aws')
-                ? refs.instanceId.value.trim()
-                : ((sel && sel.instanceId) || ''),
+            instanceId: (sel && sel.instanceId) || '', // aws 서버리스는 빈 값 (백엔드 미사용)
         };
         if (kind === 'nrdbms') {
             targetPoint.databaseName  = refs.database.value.trim();
