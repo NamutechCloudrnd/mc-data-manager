@@ -86,7 +86,7 @@ func BackupOSPostHandler(ctx echo.Context) error {
 		return ctx.JSON(http.StatusInternalServerError, map[string]string{"error": "backup failed", "id": record.ID})
 	}
 
-	return ctx.JSON(http.StatusOK, record)
+	return ctx.JSON(http.StatusOK, backup.ToListResponse(record))
 }
 
 // BackupRDBPostHandler godoc
@@ -150,7 +150,7 @@ func BackupRDBPostHandler(ctx echo.Context) error {
 		return ctx.JSON(http.StatusInternalServerError, map[string]string{"error": "backup failed", "id": record.ID})
 	}
 
-	return ctx.JSON(http.StatusOK, record)
+	return ctx.JSON(http.StatusOK, backup.ToListResponse(record))
 }
 
 // BackupNRDBPostHandler godoc
@@ -218,7 +218,7 @@ func BackupNRDBPostHandler(ctx echo.Context) error {
 		return ctx.JSON(http.StatusInternalServerError, map[string]string{"error": "backup failed", "id": record.ID})
 	}
 
-	return ctx.JSON(http.StatusOK, record)
+	return ctx.JSON(http.StatusOK, backup.ToListResponse(record))
 }
 
 // GetAllBackupHandler godoc

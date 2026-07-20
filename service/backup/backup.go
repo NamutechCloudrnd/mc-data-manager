@@ -3,6 +3,8 @@ package backup
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"time"
 
 	"github.com/cloud-barista/mc-data-manager/config"
 	"github.com/cloud-barista/mc-data-manager/models"
@@ -23,7 +25,11 @@ func CreateBackup(serviceType string, source models.BackupSourceCommon, backupNa
 	}
 
 	id := uuid.New().String()
-	path := "/Users/minyeong/Desktop/backup/" + id
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve home directory: %w", err)
+	}
+	path := filepath.Join(home, "backup", id)
 	if err := os.MkdirAll(path, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create backup directory: %w", err)
 	}
@@ -45,6 +51,7 @@ func CreateBackup(serviceType string, source models.BackupSourceCommon, backupNa
 		DatabaseName: dbNamePtr,
 		Path:         path,
 		Status:       "in_progress",
+		CreatedAt:    time.Now().UTC(),
 	}
 	if err := repo().CreateBackup(record); err != nil {
 		return nil, err
@@ -63,6 +70,20 @@ func MarkStatus(id string, success bool) (string, error) {
 	return status, nil
 }
 
+func ToListResponse(record *models.BackupRecord) models.BackupListResponse {
+	return models.BackupListResponse{
+		ID:           record.ID,
+		BackupName:   record.BackupName,
+		Provider:     record.Provider,
+		Region:       record.Region,
+		InstanceId:   record.InstanceId,
+		InstanceName: record.InstanceName,
+		DatabaseName: record.DatabaseName,
+		Status:       record.Status,
+		CreatedAt:    record.CreatedAt,
+	}
+}
+
 func ListBackups(serviceType string) ([]models.BackupListResponse, error) {
 	nsId := utils.GetNsId()
 	records, err := repo().FindByNamespace(nsId, serviceType)
@@ -72,17 +93,7 @@ func ListBackups(serviceType string) ([]models.BackupListResponse, error) {
 
 	responses := make([]models.BackupListResponse, 0, len(records))
 	for _, record := range records {
-		responses = append(responses, models.BackupListResponse{
-			ID:           record.ID,
-			BackupName:   record.BackupName,
-			Provider:     record.Provider,
-			Region:       record.Region,
-			InstanceId:   record.InstanceId,
-			InstanceName: record.InstanceName,
-			DatabaseName: record.DatabaseName,
-			Status:       record.Status,
-			CreatedAt:    record.CreatedAt,
-		})
+		responses = append(responses, ToListResponse(&record))
 	}
 	return responses, nil
 }
