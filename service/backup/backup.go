@@ -1,7 +1,3 @@
-// Package backup manages the backup catalog: namespace-scoped records of
-// backups taken across Object Storage, RDB, and NRDB. Actual backup/restore
-// execution stays in service/task; this package only tracks what exists and
-// where it lives on disk.
 package backup
 
 import (
@@ -14,21 +10,34 @@ import (
 	"github.com/cloud-barista/mc-data-manager/repository"
 )
 
-// repo returns the namespace-scoped backup repository, backed by the shared
-// config.DB connection (set up by config.InitDB() at server startup).
 func repo() *repository.BackupRepository {
 	return repository.NewBackupRepository(config.DB)
 }
 
-// ListBackups returns the current namespace's backup catalog entries,
-// optionally filtered by service type ("objectstorage" | "rdbms" | "nrdbms").
-// Empty serviceType returns all types.
-func ListBackups(serviceType string) ([]models.BackupRecord, error) {
+func ListBackups(serviceType string) ([]models.BackupListResponse, error) {
 	nsId := utils.GetNsId()
-	return repo().FindByNamespace(nsId, serviceType)
+	records, err := repo().FindByNamespace(nsId, serviceType)
+	if err != nil {
+		return nil, err
+	}
+
+	responses := make([]models.BackupListResponse, 0, len(records))
+	for _, record := range records {
+		responses = append(responses, models.BackupListResponse{
+			ID:           record.ID,
+			BackupName:   record.BackupName,
+			Provider:     record.Provider,
+			Region:       record.Region,
+			InstanceId:   record.InstanceId,
+			InstanceName: record.InstanceName,
+			DatabaseName: record.DatabaseName,
+			Status:       record.Status,
+			CreatedAt:    record.CreatedAt,
+		})
+	}
+	return responses, nil
 }
 
-// DeleteBackup removes a backup catalog entry and its backed-up files on disk.
 func DeleteBackup(id string) error {
 	record, err := repo().FindByID(id)
 	if err != nil {

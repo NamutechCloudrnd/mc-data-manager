@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/cloud-barista/mc-data-manager/models"
+	"github.com/cloud-barista/mc-data-manager/service/backup"
 	"github.com/cloud-barista/mc-data-manager/service/task"
 	"github.com/labstack/echo/v4"
 )
@@ -285,4 +286,77 @@ func DeleteBackupkHandler(ctx echo.Context) error {
 		Result: logstrings.String(),
 		Error:  nil,
 	})
+}
+
+// ListBackupObjectStorageHandler godoc
+//
+//	@ID 			ListBackupObjectStorageHandler
+//	@Summary		List Object Storage backups
+//	@Description	Returns the current namespace's Object Storage backup catalog entries.
+//	@Tags			[Backup]
+//	@Produce		json
+//	@Success		200	{array}		models.BackupRecord	"Backup catalog entries"
+//	@Failure		500	{object}	map[string]string		"Internal Server Error"
+//	@Router			/backup/objectstorage [get]
+func ListBackupObjectStorageHandler(ctx echo.Context) error {
+	backups, err := backup.ListBackups(string(models.ObejectStorage))
+	if err != nil {
+		return ctx.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	return ctx.JSON(http.StatusOK, backups)
+}
+
+// ListBackupRDBHandler godoc
+//
+//	@ID 			ListBackupRDBHandler
+//	@Summary		List RDB backups
+//	@Description	Returns the current namespace's RDB backup catalog entries.
+//	@Tags			[Backup]
+//	@Produce		json
+//	@Success		200	{array}		models.BackupRecord	"Backup catalog entries"
+//	@Failure		500	{object}	map[string]string		"Internal Server Error"
+//	@Router			/backup/rdbms [get]
+func ListBackupRDBHandler(ctx echo.Context) error {
+	backups, err := backup.ListBackups(string(models.RDBMS))
+	if err != nil {
+		return ctx.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	return ctx.JSON(http.StatusOK, backups)
+}
+
+// ListBackupNRDBHandler godoc
+//
+//	@ID 			ListBackupNRDBHandler
+//	@Summary		List NRDB backups
+//	@Description	Returns the current namespace's NRDB backup catalog entries.
+//	@Tags			[Backup]
+//	@Produce		json
+//	@Success		200	{array}		models.BackupRecord	"Backup catalog entries"
+//	@Failure		500	{object}	map[string]string		"Internal Server Error"
+//	@Router			/backup/nrdbms [get]
+func ListBackupNRDBHandler(ctx echo.Context) error {
+	backups, err := backup.ListBackups(string(models.NRDBMS))
+	if err != nil {
+		return ctx.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	return ctx.JSON(http.StatusOK, backups)
+}
+
+// DeleteBackupHandler godoc
+//
+//	@ID 			DeleteBackupHandler
+//	@Summary		Delete a backup
+//	@Description	Deletes a backup catalog entry and its backed-up files on disk.
+//	@Tags			[Backup]
+//	@Produce		json
+//	@Param			id	path	string	true	"Backup ID"
+//	@Success		200	{object}	map[string]string	"Backup deleted"
+//	@Failure		500	{object}	map[string]string	"Internal Server Error"
+//	@Router			/backup/{id} [delete]
+func DeleteBackupHandler(ctx echo.Context) error {
+	id := ctx.Param("id")
+	if err := backup.DeleteBackup(id); err != nil {
+		return ctx.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	return ctx.JSON(http.StatusOK, map[string]string{"result": "backup deleted"})
 }
