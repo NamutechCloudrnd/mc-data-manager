@@ -293,17 +293,47 @@
             <div class="card rounded-3 mb-3 p-3">
                 <div class="input-group mb-3">
                     <div class="form-floating">
-                        <input type="text" class="form-control" id="targetPointLabel" placeholder="Source" style="border: 0; background-color: white;" value="Backup Path" required disabled>
+                        <input type="text" class="form-control" id="targetPointLabel" placeholder="Target" style="border: 0; background-color: white;" value="Backup" required disabled>
                         <label for="targetPointLabel">Target</label>
                     </div>
                 </div>
-                <div class="input-group">
-                    <span class="input-group-text rounded-start"><i class="fas fa-folder"></i></span>
-                    <div class="form-floating">
-                        <input type="text" class="form-control rounded-end" id="mig-linux-path" name="targetPoint[path]" value="/tmp/dummy" placeholder="디렉토리 경로">
-                        <label for="mig-linux-path">Path</label>
+                <!-- Path 입력 UI 삭제. 제출 계약(targetPoint[path])은 hidden으로 보존 (백엔드 무변경). -->
+                <input type="hidden" id="mig-linux-path" name="targetPoint[path]" value="/tmp/dummy">
+                <!-- ── Backup List (조회/삭제) — Target 위치 ── -->
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <span class="text-muted small fw-semibold">Backup List</span>
+                    <div class="d-flex gap-2 align-items-center">
+                        <div class="input-group input-group-sm" style="width:200px;">
+                            <span class="input-group-text"><i class="bi bi-search"></i></span>
+                            <input type="text" class="form-control" id="backup-search" placeholder="Search by name">
+                        </div>
+                        <button type="button" class="btn btn-danger btn-sm" id="backup-deleteBtn" disabled>
+                            <i class="bi bi-trash3 me-1"></i>Delete
+                        </button>
+                        <button type="button" class="btn btn-primary btn-sm" id="backup-createBtn">
+                            <i class="bi bi-plus-lg me-1"></i>Back up
+                        </button>
                     </div>
                 </div>
+                <table class="table table-bordered table-sm mb-0">
+                    <thead>
+                        <tr>
+                            <th style="width:36px;"></th>
+                            <th>Backup Name</th>
+                            <th>Provider</th>
+                            <th>Region</th>
+                            <th>Instance ID</th>
+                            <th>Instance Name</th>
+                            <th>Database Name</th>
+                            <th>Status</th>
+                            <th>Created</th>
+                        </tr>
+                    </thead>
+                    <tbody id="backup-table-body">
+                        <tr><td colspan="9" class="text-center text-muted small py-3">Loading backups…</td></tr>
+                    </tbody>
+                </table>
+                <div id="backup-pagination" class="mt-2"></div>
             </div>
             <button type="submit" class="btn btn-primary rounded-3 float-end" id="submitBtn">Submit</button>
         </form>
@@ -313,6 +343,48 @@
 {{ template "bucket-panel.html" . }}
 {{ template "instance-panel.html" . }}
 {{ template "sample-data-panel.html" . }}
+
+<!-- 백업 삭제 확인 모달 (Backup List 전용) -->
+<div class="modal fade" id="backupDeleteModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header border-bottom-0 pb-1">
+                <h5 class="modal-title text-danger fw-semibold">Delete Backup</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body pt-1">
+                <p class="mb-2 small">You are about to permanently delete <strong id="backup-delete-name"></strong>.</p>
+                <p class="mb-3 small">To delete this backup, enter its Backup Name.</p>
+                <input type="text" class="form-control" id="backup-delete-input" placeholder="Backup Name" autocomplete="off">
+                <div id="backup-delete-error" class="text-danger small mt-1 d-none">Backup name does not match.</div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" id="backup-delete-confirm" disabled><i class="bi bi-trash3 me-1"></i>Delete</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 백업 생성 Offcanvas — 입력 항목 미확정. 우선 Backup Name만. -->
+<div class="offcanvas offcanvas-end" id="backupCreateOffcanvas" tabindex="-1" style="width: min(480px, 100vw);">
+    <div class="offcanvas-header border-bottom">
+        <h5 class="offcanvas-title fw-semibold"><i class="bi bi-plus-circle me-2 text-primary"></i>Create Backup</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+    </div>
+    <div class="offcanvas-body">
+        <div class="input-group mb-3">
+            <span class="input-group-text rounded-start"><i class="bi bi-hdd-stack"></i></span>
+            <div class="form-floating">
+                <input type="text" class="form-control rounded-end" id="backup-create-name" placeholder="Backup Name" autocomplete="off">
+                <label for="backup-create-name">Backup Name</label>
+            </div>
+        </div>
+        <button type="button" class="btn btn-primary w-100" id="backup-create-submit" disabled>
+            <i class="bi bi-check-lg me-1"></i>Create
+        </button>
+    </div>
+</div>
 
 <style>
 @keyframes ic-spin      { to { transform: rotate(360deg); } }
@@ -1078,4 +1150,141 @@ const source = {
     source.cred.addEventListener('change', () => { if (source.service.value === 'nrdbms') setTimeout(refreshNrdbUsernameUI, 0); });
 
     updateFormVisibility();
+</script>
+
+<!-- ── Backup List (조회/삭제) 전용 모듈 — 기존 스크립트/폼 무변경, 완전 additive ── -->
+<script>
+(function () {
+    'use strict';
+    // mock: 백엔드 미구현 → 정적 JSON을 /res(=./web)에서 직접 fetch.
+    // 실데이터 연동 시 URL을 GET /backup/{service}로 교체.
+    const BACKUP_MOCK = {
+        objectstorage: '/res/mock/backup-objectstorage.json',
+        rdbms:         '/res/mock/backup-rdbms.json',
+        nrdbms:        '/res/mock/backup-nrdbms.json',
+    };
+    const SERVICE_BY_TAB = { 'Object Storage': 'objectstorage', 'SQL Database': 'rdbms', 'No-SQL': 'nrdbms' };
+    const PAGE_SIZE = 10;
+    let rows = [], page = 1, selected = null, deleteModal = null, createOc = null;
+
+    const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g,
+        c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+    function statusBadge(status) {
+        const s = (status || '').toLowerCase();
+        if (s === 'completed')   return `<span class="text-success small"><i class="bi bi-check-circle-fill me-1"></i>completed</span>`;
+        if (s === 'failed')      return `<span class="text-danger small"><i class="bi bi-x-circle-fill me-1"></i>failed</span>`;
+        if (s === 'in_progress') return `<span class="text-primary small"><i class="bi bi-hourglass-split ic-spin me-1"></i>in progress</span>`;
+        return `<span class="text-muted small">${esc(s || '-')}</span>`;
+    }
+
+    function load(service) {
+        const url = BACKUP_MOCK[service] || BACKUP_MOCK.objectstorage;
+        const tbody = document.getElementById('backup-table-body');
+        tbody.innerHTML = '<tr><td colspan="9" class="text-center py-3"><span class="spinner-border spinner-border-sm"></span></td></tr>';
+        selected = null; page = 1; updateDeleteBtn();
+        fetch(url)
+            .then(r => r.ok ? r.json() : Promise.reject(r.status))
+            .then(json => { rows = Array.isArray(json) ? json : []; render(); })
+            .catch(err => { console.error('BackupList.load:', err); rows = []; render(); });
+    }
+
+    function applyFilter() {
+        const q = (document.getElementById('backup-search').value || '').toLowerCase();
+        return q ? rows.filter(b => (b.backupName || '').toLowerCase().includes(q)) : rows;
+    }
+
+    function renderPag(total) {
+        renderPagination(document.getElementById('backup-pagination'),
+            Math.ceil(total / PAGE_SIZE) || 1, page,
+            p => { page = p; render(); });
+    }
+
+    function makeRow(b) {
+        const isSel = selected && selected.id === b.id;
+        return `<tr class="backup-row${isSel ? ' table-active' : ''}" style="cursor:pointer;"
+                    data-id="${esc(b.id || '')}" data-name="${esc(b.backupName || '')}">
+                    <td class="text-center align-middle"><input type="checkbox" class="form-check-input"${isSel ? ' checked' : ''}></td>
+                    <td class="small">${esc(b.backupName || '-')}</td>
+                    <td class="small">${esc(b.provider || '-')}</td>
+                    <td class="small">${esc(b.region || '-')}</td>
+                    <td class="small">${esc(b.instanceId || '-')}</td>
+                    <td class="small">${esc(b.instanceName || '-')}</td>
+                    <td class="small">${b.databaseName ? esc(b.databaseName) : '-'}</td>
+                    <td>${statusBadge(b.status)}</td>
+                    <td class="small">${formatKstDate(b.createdAt)}</td>
+                </tr>`;
+    }
+
+    function render() {
+        const filtered = applyFilter();
+        const start = (page - 1) * PAGE_SIZE;
+        const pageRows = filtered.slice(start, start + PAGE_SIZE);
+        const tbody = document.getElementById('backup-table-body');
+        tbody.innerHTML = pageRows.length
+            ? pageRows.map(makeRow).join('')
+            : '<tr><td colspan="9" class="text-center text-muted small py-3">No backups found</td></tr>';
+        tbody.querySelectorAll('.backup-row').forEach(row =>
+            row.addEventListener('click', () => onRowClick(row)));
+        renderPag(filtered.length);
+    }
+
+    function onRowClick(row) {
+        const id = row.dataset.id;
+        selected = (selected && selected.id === id) ? null : { id, name: row.dataset.name };
+        render(); updateDeleteBtn();
+    }
+
+    function updateDeleteBtn() {
+        document.getElementById('backup-deleteBtn').disabled = !selected;
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        deleteModal = new bootstrap.Modal(document.getElementById('backupDeleteModal'));
+        document.getElementById('backup-search').addEventListener('input', () => { page = 1; render(); });
+        // + Back up → 백업 생성 Offcanvas 오픈 (입력 항목 미확정, 우선 Backup Name)
+        const createName = document.getElementById('backup-create-name');
+        const createSubmit = document.getElementById('backup-create-submit');
+        document.getElementById('backup-createBtn').addEventListener('click', () => {
+            if (!createOc) createOc = new bootstrap.Offcanvas(document.getElementById('backupCreateOffcanvas'));
+            createName.value = '';
+            createSubmit.disabled = true;
+            createOc.show();
+        });
+        createName.addEventListener('input', function () { createSubmit.disabled = !this.value.trim(); });
+        createSubmit.addEventListener('click', () => {
+            // [임시 — mock] 입력 항목 미확정. 백엔드 연동 시 여기서 생성 API 호출 + load(현재 service).
+            createOc.hide();
+        });
+        const delInput = document.getElementById('backup-delete-input');
+        document.getElementById('backup-deleteBtn').addEventListener('click', () => {
+            if (!selected) return;
+            document.getElementById('backup-delete-name').textContent = selected.name || selected.id;
+            deleteModal.show();
+        });
+        // instance 삭제와 동일 UX: backup name을 정확히 입력해야 Delete 활성화
+        document.getElementById('backupDeleteModal').addEventListener('show.bs.modal', () => {
+            delInput.value = '';
+            document.getElementById('backup-delete-error').classList.add('d-none');
+            document.getElementById('backup-delete-confirm').disabled = true;
+        });
+        delInput.addEventListener('input', function () {
+            if (!selected) return;
+            const match = this.value === (selected.name || '');
+            document.getElementById('backup-delete-error').classList.toggle('d-none', !this.value || match);
+            document.getElementById('backup-delete-confirm').disabled = !match;
+        });
+        document.getElementById('backup-delete-confirm').addEventListener('click', () => {
+            if (!selected) return;
+            // [임시 — mock] 정적 JSON이라 서버 반영 불가 → 로컬 제거만.
+            // 실데이터 연동 시: fetch(`/backup/${selected.id}`, { method: 'DELETE' }) 후 load(현재 service).
+            rows = rows.filter(b => b.id !== selected.id);
+            selected = null; deleteModal.hide(); render(); updateDeleteBtn();
+        });
+        // 기존 탭 핸들러는 그대로 두고 별도 리스너만 추가 (additive): 탭 전환 시 목록도 재조회
+        document.querySelectorAll('#serviceTabs .nav-link').forEach(tab =>
+            tab.addEventListener('click', () => load(SERVICE_BY_TAB[tab.textContent.trim()] || 'objectstorage')));
+        load('objectstorage'); // 기본 활성 탭
+    });
+})();
 </script>
