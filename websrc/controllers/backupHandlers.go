@@ -38,35 +38,55 @@ import (
 //	@Failure		500			{object}	models.BasicResponse	"Internal Server Error"
 //	@Router			/backup/objectstorage [post]
 func BackupOSPostHandler(ctx echo.Context) error {
-	start := time.Now()
-
-	logger, logstrings := pageLogInit(ctx, "Bakcup", "Bakcup Objectstorage", start)
-
-	params := models.DataTask{}
-	if !getDataWithReBind(logger, start, ctx, &params) {
-		errStr := "Invalid request data"
-		return ctx.JSON(http.StatusBadRequest, models.BasicResponse{
-			Result: logstrings.String(),
-			Error:  &errStr,
-		})
+	var req models.BackupObjectStorageRequest
+	if err := ctx.Bind(&req); err != nil {
+		return ctx.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 	}
-	params.TaskMeta.TaskID = params.OperationId
+
+	missing := map[string]string{
+		"sourcePoint.provider":     req.SourcePoint.Provider,
+		"sourcePoint.region":       req.SourcePoint.Region,
+		"sourcePoint.instanceId":   req.SourcePoint.InstanceId,
+		"sourcePoint.instanceName": req.SourcePoint.InstanceName,
+		"sourcePoint.bucket":       req.SourcePoint.Bucket,
+		"targetPoint.backupName":   req.TargetPoint.BackupName,
+	}
+	for field, val := range missing {
+		if val == "" {
+			return ctx.JSON(http.StatusBadRequest, map[string]string{"error": field + " is required"})
+		}
+	}
+	if req.SourcePoint.Provider == "ncp" && req.SourcePoint.Endpoint == "" {
+		return ctx.JSON(http.StatusBadRequest, map[string]string{"error": "sourcePoint.endpoint is required"})
+	}
+
+	record, err := backup.CreateBackup("objectstorage", req.SourcePoint.BackupSourceCommon, req.TargetPoint.BackupName, "")
+	if err != nil {
+		return ctx.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+
+	var params models.DataTask
+	params.TaskMeta.TaskID = record.ID
 	params.TaskMeta.TaskType = models.Backup
 	params.TaskMeta.ServiceType = models.ObejectStorage
-	manager := task.GetFileScheduleManager()
+	params.SourcePoint.Provider = req.SourcePoint.Provider
+	params.SourcePoint.Region = req.SourcePoint.Region
+	params.SourcePoint.ObjectStorageParams = req.SourcePoint.ObjectStorageParams
+	params.TargetPoint.Path = record.Path
+	params.SourceFilter = req.SourceFilter
 
-	if !manager.RunTaskOnce(params) {
-		return ctx.JSON(http.StatusInternalServerError, models.BasicResponse{
-			Result: logstrings.String(),
-			Error:  nil,
-		})
+	manager := task.GetFileScheduleManager()
+	success := manager.RunTaskOnce(params)
+	status, err := backup.MarkStatus(record.ID, success)
+	if err != nil {
+		return ctx.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
-	// backup success. Send result to client
-	jobEnd(logger, "Successfully Bakcup data", start)
-	return ctx.JSON(http.StatusOK, models.BasicResponse{
-		Result: logstrings.String(),
-		Error:  nil,
-	})
+	record.Status = status
+	if !success {
+		return ctx.JSON(http.StatusInternalServerError, map[string]string{"error": "backup failed", "id": record.ID})
+	}
+
+	return ctx.JSON(http.StatusOK, record)
 }
 
 // BackupRDBPostHandler godoc
@@ -82,35 +102,55 @@ func BackupOSPostHandler(ctx echo.Context) error {
 //	@Failure		500			{object}	models.BasicResponse	"Internal Server Error"
 //	@Router			/backup/rdbms [post]
 func BackupRDBPostHandler(ctx echo.Context) error {
-	start := time.Now()
-
-	logger, logstrings := pageLogInit(ctx, "Bakcup", "Bakcup RDBMS", start)
-
-	params := models.DataTask{}
-	if !getDataWithReBind(logger, start, ctx, &params) {
-		errStr := "Invalid request data"
-		return ctx.JSON(http.StatusBadRequest, models.BasicResponse{
-			Result: logstrings.String(),
-			Error:  &errStr,
-		})
+	var req models.BackupRDBRequest
+	if err := ctx.Bind(&req); err != nil {
+		return ctx.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 	}
-	params.TaskMeta.TaskID = params.OperationId
+
+	missing := map[string]string{
+		"sourcePoint.provider":     req.SourcePoint.Provider,
+		"sourcePoint.region":     	req.SourcePoint.Region,
+		"sourcePoint.instanceId":   req.SourcePoint.InstanceId,
+		"sourcePoint.instanceName": req.SourcePoint.InstanceName,
+		"sourcePoint.host":         req.SourcePoint.Host,
+		"sourcePoint.port":         req.SourcePoint.Port,
+		"sourcePoint.username":     req.SourcePoint.User,
+		"sourcePoint.password":     req.SourcePoint.Password,
+		"sourcePoint.databaseName": req.SourcePoint.DatabaseName,
+		"targetPoint.backupName":   req.TargetPoint.BackupName,
+	}
+	for field, val := range missing {
+		if val == "" {
+			return ctx.JSON(http.StatusBadRequest, map[string]string{"error": field + " is required"})
+		}
+	}
+
+	record, err := backup.CreateBackup("rdbms", req.SourcePoint.BackupSourceCommon, req.TargetPoint.BackupName, req.SourcePoint.DatabaseName)
+	if err != nil {
+		return ctx.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+
+	var params models.DataTask
+	params.TaskMeta.TaskID = record.ID
 	params.TaskMeta.TaskType = models.Backup
 	params.TaskMeta.ServiceType = models.RDBMS
-	manager := task.GetFileScheduleManager()
+	params.SourcePoint.Provider = req.SourcePoint.Provider
+	params.SourcePoint.Region = req.SourcePoint.Region
+	params.SourcePoint.MySQLParams = req.SourcePoint.MySQLParams
+	params.TargetPoint.Path = record.Path
 
-	if !manager.RunTaskOnce(params) {
-		return ctx.JSON(http.StatusInternalServerError, models.BasicResponse{
-			Result: logstrings.String(),
-			Error:  nil,
-		})
+	manager := task.GetFileScheduleManager()
+	success := manager.RunTaskOnce(params)
+	status, err := backup.MarkStatus(record.ID, success) 
+	if err != nil {
+		return ctx.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
-	// backup success. Send result to client
-	jobEnd(logger, "Successfully Bakcup data", start)
-	return ctx.JSON(http.StatusOK, models.BasicResponse{
-		Result: logstrings.String(),
-		Error:  nil,
-	})
+	record.Status = status
+	if !success {
+		return ctx.JSON(http.StatusInternalServerError, map[string]string{"error": "backup failed", "id": record.ID})
+	}
+
+	return ctx.JSON(http.StatusOK, record)
 }
 
 // BackupNRDBPostHandler godoc
@@ -126,35 +166,59 @@ func BackupRDBPostHandler(ctx echo.Context) error {
 //	@Failure		500			{object}	models.BasicResponse	"Internal Server Error"
 //	@Router			/backup/nrdbms [post]
 func BackupNRDBPostHandler(ctx echo.Context) error {
-	start := time.Now()
-
-	logger, logstrings := pageLogInit(ctx, "Bakcup", "Bakcup NRDBMS", start)
-
-	params := models.DataTask{}
-	if !getDataWithReBind(logger, start, ctx, &params) {
-		errStr := "Invalid request data"
-		return ctx.JSON(http.StatusBadRequest, models.BasicResponse{
-			Result: logstrings.String(),
-			Error:  &errStr,
-		})
+	var req models.BackupNRDBRequest
+	if err := ctx.Bind(&req); err != nil {
+		return ctx.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 	}
-	params.TaskMeta.TaskID = params.OperationId
+
+	if req.SourcePoint.Provider == "" || req.SourcePoint.Region == "" || req.TargetPoint.BackupName == "" {
+		return ctx.JSON(http.StatusBadRequest, map[string]string{"error": "provider, region, backupName are required"})
+	}
+	if req.SourcePoint.Provider != "aws" && (req.SourcePoint.InstanceId == "" || req.SourcePoint.InstanceName == "") {
+		return ctx.JSON(http.StatusBadRequest, map[string]string{"error": "instanceId, instanceName"})
+	}
+
+	switch req.SourcePoint.Provider {
+	case "aws":
+	case "gcp":
+		if req.SourcePoint.DatabaseID == "" {
+			return ctx.JSON(http.StatusBadRequest, map[string]string{"error": "databaseId are required"})
+		}
+	case "ncp", "alibaba":
+		if req.SourcePoint.Host == "" || req.SourcePoint.Port == "" || req.SourcePoint.User == "" || req.SourcePoint.Password == "" || req.SourcePoint.DatabaseName == "" {
+			return ctx.JSON(http.StatusBadRequest, map[string]string{"error": "host, port, username, password, databaseName are required"})
+		}
+	default:
+		return ctx.JSON(http.StatusBadRequest, map[string]string{"error": "unsupported provider: " + req.SourcePoint.Provider})
+	}
+
+	record, err := backup.CreateBackup("nrdbms", req.SourcePoint.BackupSourceCommon, req.TargetPoint.BackupName, req.SourcePoint.DatabaseName)
+	if err != nil {
+		return ctx.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+
+	var params models.DataTask
+	params.TaskMeta.TaskID = record.ID
 	params.TaskMeta.TaskType = models.Backup
 	params.TaskMeta.ServiceType = models.NRDBMS
-	manager := task.GetFileScheduleManager()
+	params.SourcePoint.Provider = req.SourcePoint.Provider
+	params.SourcePoint.Region = req.SourcePoint.Region
+	params.SourcePoint.MySQLParams = req.SourcePoint.MySQLParams
+	params.SourcePoint.DatabaseID = req.SourcePoint.DatabaseID
+	params.TargetPoint.Path = record.Path
 
-	if !manager.RunTaskOnce(params) {
-		return ctx.JSON(http.StatusInternalServerError, models.BasicResponse{
-			Result: logstrings.String(),
-			Error:  nil,
-		})
+	manager := task.GetFileScheduleManager()
+	success := manager.RunTaskOnce(params)
+	status, err := backup.MarkStatus(record.ID, success)
+	if err != nil {
+		return ctx.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
-	// backup success. Send result to client
-	jobEnd(logger, "Successfully Bakcup data", start)
-	return ctx.JSON(http.StatusOK, models.BasicResponse{
-		Result: logstrings.String(),
-		Error:  nil,
-	})
+	record.Status = status
+	if !success {
+		return ctx.JSON(http.StatusInternalServerError, map[string]string{"error": "backup failed", "id": record.ID})
+	}
+
+	return ctx.JSON(http.StatusOK, record)
 }
 
 // GetAllBackupHandler godoc

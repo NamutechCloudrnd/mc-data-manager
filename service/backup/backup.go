@@ -8,10 +8,59 @@ import (
 	"github.com/cloud-barista/mc-data-manager/models"
 	"github.com/cloud-barista/mc-data-manager/pkg/utils"
 	"github.com/cloud-barista/mc-data-manager/repository"
+
+	"github.com/google/uuid"
 )
 
 func repo() *repository.BackupRepository {
 	return repository.NewBackupRepository(config.DB)
+}
+
+func CreateBackup(serviceType string, source models.BackupSourceCommon, backupName, databaseName string) (*models.BackupRecord, error) {
+	nsId := utils.GetNsId()
+	if err := repo().CheckDuplicate(nsId, serviceType, backupName); err != nil {
+		return nil, err
+	}
+
+	id := uuid.New().String()
+	path := "/Users/minyeong/Desktop/backup/" + id
+	if err := os.MkdirAll(path, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create backup directory: %w", err)
+	}
+
+	var dbNamePtr *string
+	if databaseName != "" {
+		dbNamePtr = &databaseName
+	}
+
+	record := &models.BackupRecord{
+		ID:           id,
+		NamespaceID:  nsId,
+		ServiceType:  serviceType,
+		BackupName:   backupName,
+		Provider:     source.Provider,
+		Region:       source.Region,
+		InstanceId:   source.InstanceId,
+		InstanceName: source.InstanceName,
+		DatabaseName: dbNamePtr,
+		Path:         path,
+		Status:       "in_progress",
+	}
+	if err := repo().CreateBackup(record); err != nil {
+		return nil, err
+	}
+	return record, nil
+}
+
+func MarkStatus(id string, success bool) (string, error) {
+	status := "failed"
+	if success {
+		status = "completed"
+	}
+	if err := repo().UpdateStatus(id, status); err != nil {
+		return "", err
+	}
+	return status, nil
 }
 
 func ListBackups(serviceType string) ([]models.BackupListResponse, error) {

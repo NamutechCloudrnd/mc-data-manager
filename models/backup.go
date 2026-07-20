@@ -2,9 +2,6 @@ package models
 
 import "time"
 
-// BackupRecord is the persisted catalog entry for a backup (Object Storage,
-// RDB, or NRDB), keyed by namespace + service type + backup name. Path is
-// server-managed (see docs/superpowers/specs/2026-07-15-backup-catalog-design.md).
 type BackupRecord struct {
 	ID           string    `gorm:"primaryKey;size:36"`
 	NamespaceID  string    `gorm:"column:namespace_id;size:100;not null;uniqueIndex:idx_ns_type_name"`
@@ -31,41 +28,50 @@ type BackupListResponse struct {
 	Region       string    `json:"region"`
 	InstanceId   string    `json:"instanceId"`
 	InstanceName string    `json:"instanceName"`
-	DatabaseName *string    `json:"databaseName"`
+	DatabaseName *string   `json:"databaseName"`
 	Status       string    `json:"status"`
 	CreatedAt    time.Time `json:"createdAt"`
 }
 
-type BackupCommonRequest struct {
-	BackupName   string `json:"backupName"`
+type BackupSourceCommon struct {
 	Provider     string `json:"provider"`
 	Region       string `json:"region"`
 	InstanceId   string `json:"instanceId"`
 	InstanceName string `json:"instanceName"`
 }
 
+type BackupTargetPoint struct {
+	BackupName string `json:"backupName"`
+}
+
+type BackupObjectStorageSourcePoint struct {
+	BackupSourceCommon
+	ObjectStorageParams
+}
+
 type BackupObjectStorageRequest struct {
-	BackupCommonRequest
-	Bucket       string              `json:"bucket"`
-	Endpoint     string              `json:"endpoint,omitempty"` // only used by NCP
-	SourceFilter *ObjectFilterParams `json:"sourceFilter,omitempty"`
+	SourcePoint  BackupObjectStorageSourcePoint `json:"sourcePoint"`
+	TargetPoint  BackupTargetPoint              `json:"targetPoint"`
+	SourceFilter *ObjectFilterParams            `json:"sourceFilter,omitempty"`
+}
+
+type BackupRDBSourcePoint struct {
+	BackupSourceCommon
+	MySQLParams
 }
 
 type BackupRDBRequest struct {
-	BackupCommonRequest
-	Host         string `json:"host"`
-	Port         string `json:"port"`
-	Username     string `json:"username"`
-	Password     string `json:"password"`
-	DatabaseName string `json:"databaseName"`
+	SourcePoint BackupRDBSourcePoint `json:"sourcePoint"`
+	TargetPoint BackupTargetPoint    `json:"targetPoint"`
+}
+
+type BackupNRDBSourcePoint struct {
+	BackupSourceCommon
+	MySQLParams
+	DatabaseID string `json:"databaseId,omitempty"` // gcp (Firestore) only
 }
 
 type BackupNRDBRequest struct {
-	BackupCommonRequest
-	Host         string `json:"host,omitempty"`
-	Port         string `json:"port,omitempty"`
-	Username     string `json:"username,omitempty"`
-	Password     string `json:"password,omitempty"`
-	DatabaseName string `json:"databaseName,omitempty"`
-	DatabaseID   string `json:"databaseId,omitempty"`
+	SourcePoint BackupNRDBSourcePoint `json:"sourcePoint"`
+	TargetPoint BackupTargetPoint     `json:"targetPoint"`
 }
