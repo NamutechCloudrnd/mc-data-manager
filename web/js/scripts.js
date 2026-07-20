@@ -1058,6 +1058,13 @@ window.instanceStatusBadge = function (status) {
     if (s === 'failed') {
         return `<span class="text-danger small"><i class="bi bi-x-circle-fill me-1"></i>failed</span>`;
     }
+    // alibaba SQL 전용 종단 상태: 인스턴스는 살아있고 마스터 유저만 실패.
+    // 배지 자체가 재등록 진입점 — 클릭은 InstancePanel의 capture 리스너가 받는다.
+    if (s === 'masteruser_failed') {
+        return `<span class="text-warning small dbi-mu-retry" role="button" tabindex="0"
+            style="cursor:pointer; text-decoration:underline dotted;"
+            title="Master user creation failed. Click to re-register the master user."><i class="bi bi-exclamation-triangle-fill me-1"></i>master user failed</span>`;
+    }
     // 그 외 상태(net_creating 등)는 API가 반환한 값을 그대로 표시한다
     return `<span class="text-primary small"><i class="bi bi-hourglass-split ic-spin me-1"></i>${window.escHtml(s || '-')}</span>`;
 };
@@ -1838,6 +1845,7 @@ const InstancePanel = (() => {
     let refs = null;
     let active = null;      // 오프캔버스를 연 패널
     let deleteCtx = null;   // { panel, instanceId, name }
+    let retryCtx = null;    // 유저 재등록 모드 대상 인스턴스 (null이면 일반 생성 모드)
     let engineVersionData = [];
     let icClasses = [];     // 현재 Instance Class 목록 (2패널 드롭다운)
     let pollTimer = null;
@@ -1931,13 +1939,75 @@ const InstancePanel = (() => {
         sel.appendChild(opt);
     }
 
+    // ── 유저 재등록 모드 전환 (신규 DOM 없이 기존 필드 상태만 토글) ──
+    // 스펙 필드는 표시용으로만 채우고 잠근다 — 전송 페이로드에는 들어가지 않는다.
+    function applyRetryMode(r, inst) {
+        document.getElementById('dbi-oc-title').innerHTML =
+            '<i class="bi bi-person-exclamation me-2 text-warning"></i>Re-register Master User';
+        const banner = document.getElementById('dbi-context').closest('.alert');
+        banner.classList.remove('alert-secondary');
+        banner.classList.add('alert-warning');
+        document.getElementById('dbi-context').textContent =
+            `Master user creation failed. Re-enter credentials for ${inst.instanceId}.`;
+
+        // select는 option 1개만 주입 (loadEngineVersions를 호출하지 않으므로 비동기 덮어쓰기 없음)
+        const fill = (sel, val) => {
+            sel.replaceChildren();
+            const opt = document.createElement('option');
+            opt.value = val || ''; opt.textContent = val || '-';
+            sel.appendChild(opt);
+            sel.value = val || '';
+            sel.disabled = true;
+        };
+        fill(r.engine, inst.engine);
+        fill(r.version, inst.engineVersion);
+
+        // Instance Class는 커스텀 위젯 — disabled가 안 먹으므로 포인터 이벤트를 죽인다
+        r.icTriggerText.textContent = inst.instanceClass || '-';
+        r.icTriggerText.classList.remove('text-muted');
+        r.klass.value = inst.instanceClass || '';
+        r.icPanel.classList.add('d-none');
+        r.icTrigger.classList.add('pe-none', 'opacity-75');
+        r.icTrigger.setAttribute('tabindex', '-1');
+
+        r.instanceId.value = inst.instanceId || '';
+        r.instanceId.disabled = true;
+
+        // Storage는 목록 API 응답(models.DBInstance)에 없다 — 값을 채우면 실제 용량과 무관한
+        // 최소값(20GB)을 진짜처럼 보여주게 되므로, 표시하지 않는다.
+        // openCreate가 일반 모드 진입 때마다 이 토글을 다시 계산하므로 원복은 불필요하다.
+        document.getElementById('dbi-storage-group').classList.add('d-none');
+
+        // 재등록 대상은 자격증명뿐 — 비우고 활성 상태 유지
+        r.username.value = '';
+        r.password.value = '';
+        r.username.disabled = false;
+        r.password.disabled = false;
+    }
+
+    // 일반 생성 모드로 원복. openCreate가 매번 먼저 호출한다.
+    function resetRetryMode(r) {
+        document.getElementById('dbi-oc-title').innerHTML =
+            '<i class="bi bi-plus-circle me-2 text-primary"></i>Create Instance';
+        const banner = document.getElementById('dbi-context').closest('.alert');
+        banner.classList.remove('alert-warning');
+        banner.classList.add('alert-secondary');
+        r.engine.disabled = false;
+        r.version.disabled = false;
+        r.instanceId.disabled = false;
+        r.icTrigger.classList.remove('pe-none', 'opacity-75');
+        r.icTrigger.setAttribute('tabindex', '0');
+    }
+
     // ── 생성 폼 ───────────────────────────────────────────
-    function openCreate(panel) {
+    function openCreate(panel, retryInst) {
         const r = uiInit();
         if (!r) return;
         active = panel;
+        retryCtx = retryInst || null;
         engineVersionData = [];
         const provider = panel.getProvider();
+        resetRetryMode(r); // 이전 재등록 모드 잔재 원복 — 분기 전에 항상 실행
         document.getElementById('dbi-context').textContent =
             (panel.getCredLabel && panel.getCredLabel()) || `${provider} / ${panel.getRegion()}`;
         // 폼 초기화 + provider별 규칙
@@ -1975,9 +2045,11 @@ const InstancePanel = (() => {
         const unGrp = document.getElementById('dbi-username-group');
         unGrp.classList.toggle('mb-1', !!help);
         unGrp.classList.toggle('mb-3', !help);
+        if (retryCtx) applyRetryMode(r, retryCtx);
         updateCreateBtn();
         r.oc.show();
-        if (!simple) loadEngineVersions();
+        // 재등록 모드는 스펙을 잠그므로 목록을 다시 불러오지 않는다 (비동기 덮어쓰기 방지)
+        if (!simple && !retryCtx) loadEngineVersions();
     }
 
     // NoSQL aws/gcp: 프로비저닝 스펙 없이 Instance ID만으로 생성 (백엔드도 instanceId만 필수)
@@ -2119,6 +2191,14 @@ const InstancePanel = (() => {
     function updateCreateBtn() {
         if (!active || !refs) return;
         const provider = active.getProvider();
+        // 유저 재등록: 자격증명만 전송하므로 자격증명만 검증한다
+        if (retryCtx) {
+            const un = refs.username.value.trim();
+            const pw = refs.password.value;
+            refs.createBtn.disabled = !(un && !usernameError(active.kind, provider, un)
+                && pw && !passwordError(provider, pw));
+            return;
+        }
         // NoSQL aws/gcp: Instance ID만으로 생성 가능
         if (isSimpleCreate(active, (provider || '').toLowerCase())) {
             refs.createBtn.disabled = !refs.instanceId.value.trim() || instanceIdDup();
@@ -2141,6 +2221,7 @@ const InstancePanel = (() => {
 
     async function createInstance() {
         if (!active) return;
+        if (retryCtx) { await retryMasterUser(); return; }
         const panel = active;
         const body = {
             provider: panel.getProvider(),
@@ -2171,6 +2252,38 @@ const InstancePanel = (() => {
         } finally {
             btn.disabled = false;
             btn.textContent = 'Create';
+        }
+    }
+
+    // 유저 재등록: 인스턴스는 변경하지 않고 계정만 생성한다.
+    // 성공 시 즉시 컨텍스트를 비워 중복 전송을 막는다.
+    async function retryMasterUser() {
+        const panel = active;
+        const inst = retryCtx;
+        const btn = refs.createBtn;
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>&nbsp;Creating...';
+        try {
+            const res = await fetch('/db/rdbms/account', {
+                method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    provider: panel.getProvider(),
+                    region: panel.getRegion(),
+                    instanceId: inst.instanceId,
+                    masterUsername: refs.username.value.trim(),
+                    masterPassword: refs.password.value,
+                })
+            });
+            const json = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+            retryCtx = null;
+            refs.oc.hide();
+            startPoll(panel, 'create', inst.instanceId);
+        } catch (err) {
+            alert('Failed to re-register the master user: ' + err.message);
+        } finally {
+            btn.textContent = 'Create';
+            updateCreateBtn(); // 성공/실패 모두 현재 모드 기준으로 버튼 상태 재평가
         }
     }
 
@@ -2233,7 +2346,7 @@ const InstancePanel = (() => {
                     const found = Array.isArray(instances) ? instances.find(i => i.instanceId === instanceId) : null;
                     const done = mode === 'delete'
                         ? !found
-                        : (found && ['available', 'failed'].includes((found.status || '').toLowerCase()));
+                        : (found && ['available', 'failed', 'masteruser_failed'].includes((found.status || '').toLowerCase()));
                     if (done) { stopPoll(); return; }
                 }
             } catch (e) { console.error('InstancePanel.poll:', e); }
@@ -2245,6 +2358,23 @@ const InstancePanel = (() => {
     function stopPoll() {
         if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
     }
+
+    // ── 배지 클릭 → 유저 재등록 진입 ─────────────────────
+    const panels = []; // init된 패널들 (배지 클릭 시 소속 패널 역추적용)
+
+    // capture 단계 필수: 행 클릭 리스너가 <tr>에 있어 버블 단계에선 이미 늦다.
+    document.addEventListener('click', e => {
+        const badge = e.target.closest('.dbi-mu-retry');
+        if (!badge) return;
+        e.stopPropagation(); // 행 선택 토글과 분리
+        const instanceId = badge.closest('tr')?.dataset.instanceId;
+        if (!instanceId) return;
+        const panel = panels.find(p =>
+            p.getRows && (p.getRows() || []).some(i => i.instanceId === instanceId));
+        if (!panel) return;
+        const inst = (panel.getRows() || []).find(i => i.instanceId === instanceId);
+        if (inst) openCreate(panel, inst);
+    }, true);
 
     // ── init ─────────────────────────────────────────────
     function init(cfg) {
@@ -2267,18 +2397,26 @@ const InstancePanel = (() => {
             getProvider: cfg.getProvider, getRegion: cfg.getRegion,
             getCredLabel: cfg.getCredLabel, getSelected: cfg.getSelected,
         } : null;
+        // 선택된 인스턴스의 목록 행 (status는 getRows에만 있다 — getSelected에는 없음)
+        const rowOf = sel => (sel && cfg.getRows)
+            ? (cfg.getRows() || []).find(i => i.instanceId === sel.instanceId) : null;
         // 버튼 전환은 '선택된 인스턴스'가 있을 때만 (NoSQL AWS는 목록이 없어 전용 버튼으로 진입)
-        const sampleEligible = () => !!sampleCfg
-            && !!(cfg.getSelected && cfg.getSelected())
-            && SamplePanel.canOpen(sampleCfg);
+        const sampleEligible = () => {
+            if (!sampleCfg) return false;
+            const sel = cfg.getSelected && cfg.getSelected();
+            if (!sel) return false;
+            // masteruser_failed는 엔드포인트가 살아있어 canOpen을 통과한다 — 여기서 막지 않으면
+            // 존재하지 않는 계정으로 접속해 Access Denied가 난다.
+            if ((rowOf(sel)?.status || '').toLowerCase() === 'masteruser_failed') return false;
+            return SamplePanel.canOpen(sampleCfg);
+        };
         panel.refreshButtons = () => {
             const p = panel.getProvider(), r = panel.getRegion();
             const ctxOk = p && p !== 'none' && r && r !== 'none';
             if (panel.createBtn) panel.createBtn.disabled = !ctxOk;
             // 생성 중(creating/net_creating 등) 인스턴스는 삭제 불가 — available 전이 후 재활성
             const sel = panel.getSelected && panel.getSelected();
-            const row = sel && panel.getRows
-                ? (panel.getRows() || []).find(i => i.instanceId === sel.instanceId) : null;
+            const row = rowOf(sel);
             const isCreating = !!row && (row.status || '').toLowerCase().includes('creating');
             if (panel.deleteBtn) panel.deleteBtn.disabled = !(ctxOk && sel) || isCreating;
             if (panel.createBtn && sampleCfg) {
@@ -2294,6 +2432,7 @@ const InstancePanel = (() => {
         });
         if (sampleCfg && cfg.sample.awsBtn) cfg.sample.awsBtn.addEventListener('click', () => SamplePanel.open(sampleCfg));
         if (panel.deleteBtn) panel.deleteBtn.addEventListener('click', () => openDelete(panel));
+        panels.push(panel);
         panel.refreshButtons();
         return panel;
     }
