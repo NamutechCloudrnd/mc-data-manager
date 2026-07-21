@@ -34,7 +34,7 @@ import (
 //	@Tags			[Restore]
 //	@Accept			json
 //	@Produce		json
-//	@Param			RequestBody		body	models.RestoreTask	true	"Parameters required for Restore"
+//	@Param			RequestBody		body	models.RestoreObjectStorageRequest	true	"Parameters required for Restore"
 //	@Success		200			{object}	models.BasicResponse	"Successfully Restore data"
 //	@Failure		500			{object}	models.BasicResponse	"Internal Server Error"
 //	@Router			/restore/objectstorage [post]
@@ -43,17 +43,40 @@ func RestoreOSPostHandler(ctx echo.Context) error {
 
 	logger, logstrings := pageLogInit(ctx, "Restore", "Restore objectstorage", start)
 
-	params := models.DataTask{}
-	if !getDataWithReBind(logger, start, ctx, &params) {
-		errStr := "Invalid request data"
-		return ctx.JSON(http.StatusBadRequest, models.BasicResponse{
-			Result: logstrings.String(),
-			Error:  &errStr,
-		})
+	var req models.RestoreObjectStorageRequest
+	if err := ctx.Bind(&req); err != nil {
+		return ctx.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 	}
-	params.TaskMeta.TaskID = params.OperationId
+
+	missing := map[string]string{
+		"sourcePoint.backupId": req.SourcePoint.BackupId,
+		"targetPoint.provider": req.TargetPoint.Provider,
+		"targetPoint.region":   req.TargetPoint.Region,
+		"targetPoint.bucket":   req.TargetPoint.Bucket,
+	}
+	for field, val := range missing {
+		if val == "" {
+			return ctx.JSON(http.StatusBadRequest, map[string]string{"error": field + " is required"})
+		}
+	}
+	if req.TargetPoint.Provider == "ncp" && req.TargetPoint.Endpoint == "" {
+		return ctx.JSON(http.StatusBadRequest, map[string]string{"error": "targetPoint.endpoint is required"})
+	}
+
+	record, err := backup.GetRestorableBackup(req.SourcePoint.BackupId, "objectstorage")
+	if err != nil {
+		return ctx.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+
+	var params models.DataTask
+	params.TaskMeta.TaskID = uuid.New().String()
 	params.TaskMeta.TaskType = models.Restore
 	params.TaskMeta.ServiceType = models.ObejectStorage
+	params.TargetPoint.Provider = req.TargetPoint.Provider
+	params.TargetPoint.Region = req.TargetPoint.Region
+	params.TargetPoint.ObjectStorageParams = req.TargetPoint.ObjectStorageParams
+	params.SourcePoint.Path = record.Path
+
 	manager := task.GetFileScheduleManager()
 
 	if !manager.RunTaskOnce(params) {
