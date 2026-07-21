@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	dds "github.com/alibabacloud-go/dds-20151201/client"
 	"github.com/alibabacloud-go/tea/tea"
@@ -16,6 +17,7 @@ import (
 	"github.com/cloud-barista/mc-data-manager/models"
 	alibabacommon "github.com/cloud-barista/mc-data-manager/pkg/alibaba"
 	"github.com/cloud-barista/mc-data-manager/pkg/nrdbinstance"
+	"github.com/rs/zerolog/log"
 )
 
 const (
@@ -75,6 +77,34 @@ func (p *AlibabaProvider) ListInstances(_ context.Context) ([]models.NRDBInstanc
 		}
 	}
 	return out, nil
+}
+
+func (p *AlibabaProvider) InstanceExists(_ context.Context, instanceID string) (bool, error) {
+	resp, err := p.client.DescribeDBInstances(&dds.DescribeDBInstancesRequest{
+		RegionId:     tea.String(p.region),
+		DBInstanceId: tea.String(instanceID),
+	})
+	if err != nil {
+		return false, fmt.Errorf("failed to describe MongoDB instance: %w", err)
+	}
+	if resp == nil || resp.Body == nil || resp.Body.DBInstances == nil {
+		return false, nil
+	}
+	return len(resp.Body.DBInstances.DBInstance) > 0, nil
+}
+
+func (p *AlibabaProvider) waitForInstanceVisible(ctx context.Context, instanceID string, timeout, interval time.Duration) {
+	deadline := time.Now().Add(timeout)
+	for {
+		if exists, err := p.InstanceExists(ctx, instanceID); err == nil && exists {
+			return
+		}
+		if time.Now().After(deadline) {
+			log.Warn().Str("instanceID", instanceID).Msg("instance not visible via DescribeDBInstances within timeout after creation")
+			return
+		}
+		time.Sleep(interval)
+	}
 }
 
 // instanceEndpoint returns the endpoint and port for one instance.
@@ -145,7 +175,7 @@ func parsePort(port *string) int32 {
 }
 
 // CreateInstance provisions a new Alibaba MongoDB (DDS) replica-set instance.
-func (p *AlibabaProvider) CreateInstance(_ context.Context, spec nrdbinstance.CreateSpec) (models.NRDBInstance, error) {
+func (p *AlibabaProvider) CreateInstance(ctx context.Context, spec nrdbinstance.CreateSpec) (models.NRDBInstance, error) {
 	if spec.MasterUsername != "root" {
 		return models.NRDBInstance{}, fmt.Errorf("Alibaba MongoDB only supports 'root' as masterUsername")
 	}
@@ -186,13 +216,14 @@ func (p *AlibabaProvider) CreateInstance(_ context.Context, spec nrdbinstance.Cr
 		Region:     p.region,
 	}
 
+	// 생성 직후 조회 시 List에 존재하지 않는 지연 문제 예방
+	p.waitForInstanceVisible(ctx, instance.InstanceID, 30*time.Second, 2*time.Second)
+
 	go p.provisionInBackground(instance.InstanceID)
 
 	return instance, nil
 }
 
-// DeleteInstance deletes a DDS MongoDB instance. The response has no instance
-// details, so the returned model is constructed locally.
 func (p *AlibabaProvider) DeleteInstance(_ context.Context, instanceID string) (models.NRDBInstance, error) {
 	_, err := p.client.DeleteDBInstance(&dds.DeleteDBInstanceRequest{
 		DBInstanceId: tea.String(instanceID),
