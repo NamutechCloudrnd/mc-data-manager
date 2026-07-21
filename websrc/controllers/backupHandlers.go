@@ -38,6 +38,9 @@ import (
 //	@Failure		500			{object}	models.BasicResponse	"Internal Server Error"
 //	@Router			/backup/objectstorage [post]
 func BackupOSPostHandler(ctx echo.Context) error {
+	start := time.Now()
+	logger, logstrings := pageLogInit(ctx, "Bakcup", "Bakcup Objectstorage", start)
+
 	var req models.BackupObjectStorageRequest
 	if err := ctx.Bind(&req); err != nil {
 		return ctx.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
@@ -62,7 +65,8 @@ func BackupOSPostHandler(ctx echo.Context) error {
 
 	record, err := backup.CreateBackup("objectstorage", req.SourcePoint.BackupSourceCommon, req.TargetPoint.BackupName, "")
 	if err != nil {
-		return ctx.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		errStr := err.Error()
+		return ctx.JSON(http.StatusInternalServerError, models.BasicResponse{Result: logstrings.String(), Error: &errStr})
 	}
 
 	var params models.DataTask
@@ -79,14 +83,17 @@ func BackupOSPostHandler(ctx echo.Context) error {
 	success := manager.RunTaskOnce(params)
 	status, err := backup.MarkStatus(record.ID, success)
 	if err != nil {
-		return ctx.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		errStr := err.Error()
+		return ctx.JSON(http.StatusInternalServerError, models.BasicResponse{Result: logstrings.String(), Error: &errStr})
 	}
 	record.Status = status
 	if !success {
-		return ctx.JSON(http.StatusInternalServerError, map[string]string{"error": "backup failed", "id": record.ID})
+		errStr := "backup failed"
+		return ctx.JSON(http.StatusInternalServerError, models.BasicResponse{Result: logstrings.String(), Error: &errStr})
 	}
 
-	return ctx.JSON(http.StatusOK, backup.ToListResponse(record))
+	jobEnd(logger, "Successfully Bakcup data", start)
+	return ctx.JSON(http.StatusOK, models.BasicResponse{Result: logstrings.String(), Error: nil})
 }
 
 // BackupRDBPostHandler godoc
@@ -102,6 +109,9 @@ func BackupOSPostHandler(ctx echo.Context) error {
 //	@Failure		500			{object}	models.BasicResponse	"Internal Server Error"
 //	@Router			/backup/rdbms [post]
 func BackupRDBPostHandler(ctx echo.Context) error {
+	start := time.Now()
+	logger, logstrings := pageLogInit(ctx, "Bakcup", "Bakcup RDBMS", start)
+
 	var req models.BackupRDBRequest
 	if err := ctx.Bind(&req); err != nil {
 		return ctx.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
@@ -109,7 +119,7 @@ func BackupRDBPostHandler(ctx echo.Context) error {
 
 	missing := map[string]string{
 		"sourcePoint.provider":     req.SourcePoint.Provider,
-		"sourcePoint.region":     	req.SourcePoint.Region,
+		"sourcePoint.region":       req.SourcePoint.Region,
 		"sourcePoint.instanceId":   req.SourcePoint.InstanceId,
 		"sourcePoint.instanceName": req.SourcePoint.InstanceName,
 		"sourcePoint.host":         req.SourcePoint.Host,
@@ -127,7 +137,8 @@ func BackupRDBPostHandler(ctx echo.Context) error {
 
 	record, err := backup.CreateBackup("rdbms", req.SourcePoint.BackupSourceCommon, req.TargetPoint.BackupName, req.SourcePoint.DatabaseName)
 	if err != nil {
-		return ctx.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		errStr := err.Error()
+		return ctx.JSON(http.StatusInternalServerError, models.BasicResponse{Result: logstrings.String(), Error: &errStr})
 	}
 
 	var params models.DataTask
@@ -141,16 +152,19 @@ func BackupRDBPostHandler(ctx echo.Context) error {
 
 	manager := task.GetFileScheduleManager()
 	success := manager.RunTaskOnce(params)
-	status, err := backup.MarkStatus(record.ID, success) 
+	status, err := backup.MarkStatus(record.ID, success)
 	if err != nil {
-		return ctx.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		errStr := err.Error()
+		return ctx.JSON(http.StatusInternalServerError, models.BasicResponse{Result: logstrings.String(), Error: &errStr})
 	}
 	record.Status = status
 	if !success {
-		return ctx.JSON(http.StatusInternalServerError, map[string]string{"error": "backup failed", "id": record.ID})
+		errStr := "backup failed"
+		return ctx.JSON(http.StatusInternalServerError, models.BasicResponse{Result: logstrings.String(), Error: &errStr})
 	}
 
-	return ctx.JSON(http.StatusOK, backup.ToListResponse(record))
+	jobEnd(logger, "Successfully Bakcup data", start)
+	return ctx.JSON(http.StatusOK, models.BasicResponse{Result: logstrings.String(), Error: nil})
 }
 
 // BackupNRDBPostHandler godoc
@@ -166,6 +180,9 @@ func BackupRDBPostHandler(ctx echo.Context) error {
 //	@Failure		500			{object}	models.BasicResponse	"Internal Server Error"
 //	@Router			/backup/nrdbms [post]
 func BackupNRDBPostHandler(ctx echo.Context) error {
+	start := time.Now()
+	logger, logstrings := pageLogInit(ctx, "Bakcup", "Bakcup NRDBMS", start)
+
 	var req models.BackupNRDBRequest
 	if err := ctx.Bind(&req); err != nil {
 		return ctx.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
@@ -194,7 +211,8 @@ func BackupNRDBPostHandler(ctx echo.Context) error {
 
 	record, err := backup.CreateBackup("nrdbms", req.SourcePoint.BackupSourceCommon, req.TargetPoint.BackupName, req.SourcePoint.DatabaseName)
 	if err != nil {
-		return ctx.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		errStr := err.Error()
+		return ctx.JSON(http.StatusInternalServerError, models.BasicResponse{Result: logstrings.String(), Error: &errStr})
 	}
 
 	var params models.DataTask
@@ -211,14 +229,17 @@ func BackupNRDBPostHandler(ctx echo.Context) error {
 	success := manager.RunTaskOnce(params)
 	status, err := backup.MarkStatus(record.ID, success)
 	if err != nil {
-		return ctx.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		errStr := err.Error()
+		return ctx.JSON(http.StatusInternalServerError, models.BasicResponse{Result: logstrings.String(), Error: &errStr})
 	}
 	record.Status = status
 	if !success {
-		return ctx.JSON(http.StatusInternalServerError, map[string]string{"error": "backup failed", "id": record.ID})
+		errStr := "backup failed"
+		return ctx.JSON(http.StatusInternalServerError, models.BasicResponse{Result: logstrings.String(), Error: &errStr})
 	}
 
-	return ctx.JSON(http.StatusOK, backup.ToListResponse(record))
+	jobEnd(logger, "Successfully Bakcup data", start)
+	return ctx.JSON(http.StatusOK, models.BasicResponse{Result: logstrings.String(), Error: nil})
 }
 
 // GetAllBackupHandler godoc

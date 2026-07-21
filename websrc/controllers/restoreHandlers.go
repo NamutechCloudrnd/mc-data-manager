@@ -20,7 +20,9 @@ import (
 	"time"
 
 	"github.com/cloud-barista/mc-data-manager/models"
+	"github.com/cloud-barista/mc-data-manager/service/backup"
 	"github.com/cloud-barista/mc-data-manager/service/task"
+	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 )
 
@@ -82,29 +84,50 @@ func RestoreOSPostHandler(ctx echo.Context) error {
 //	@Router			/restore/rdbms [post]
 func RestoreRDBPostHandler(ctx echo.Context) error {
 	start := time.Now()
-
 	logger, logstrings := pageLogInit(ctx, "Restore", "Restore RDBMS", start)
 
-	params := models.DataTask{}
-	if !getDataWithReBind(logger, start, ctx, &params) {
-		errStr := "Invalid request data"
-		return ctx.JSON(http.StatusBadRequest, models.BasicResponse{
-			Result: logstrings.String(),
-			Error:  &errStr,
-		})
+	var req models.RestoreRDBRequest
+	if err := ctx.Bind(&req); err != nil {
+		return ctx.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 	}
-	params.TaskMeta.TaskID = params.OperationId
+
+	missing := map[string]string{
+		"sourcePoint.backupId": req.SourcePoint.BackupId,
+		"targetPoint.provider": req.TargetPoint.Provider,
+		"targetPoint.region":   req.TargetPoint.Region,
+		"targetPoint.host":     req.TargetPoint.Host,
+		"targetPoint.port":     req.TargetPoint.Port,
+		"targetPoint.username": req.TargetPoint.User,
+		"targetPoint.password": req.TargetPoint.Password,
+	}
+	for field, val := range missing {
+		if val == "" {
+			return ctx.JSON(http.StatusBadRequest, map[string]string{"error": field + " is required"})
+		}
+	}
+
+	record, err := backup.GetRestorableBackup(req.SourcePoint.BackupId, "rdbms")
+	if err != nil {
+		return ctx.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+
+	var params models.DataTask
+	params.TaskMeta.TaskID = uuid.New().String()
 	params.TaskMeta.TaskType = models.Restore
 	params.TaskMeta.ServiceType = models.RDBMS
-	manager := task.GetFileScheduleManager()
+	params.TargetPoint.Provider = req.TargetPoint.Provider
+	params.TargetPoint.Region = req.TargetPoint.Region
+	params.TargetPoint.MySQLParams = req.TargetPoint.MySQLParams
+	params.SourcePoint.Path = record.Path
 
+	manager := task.GetFileScheduleManager()
 	if !manager.RunTaskOnce(params) {
 		return ctx.JSON(http.StatusInternalServerError, models.BasicResponse{
 			Result: logstrings.String(),
 			Error:  nil,
 		})
 	}
-	// backup success. Send result to client
+
 	jobEnd(logger, "Successfully Restore data", start)
 	return ctx.JSON(http.StatusOK, models.BasicResponse{
 		Result: logstrings.String(),
@@ -126,29 +149,54 @@ func RestoreRDBPostHandler(ctx echo.Context) error {
 //	@Router			/restore/nrdbms [post]
 func RestoreNRDBPostHandler(ctx echo.Context) error {
 	start := time.Now()
-
 	logger, logstrings := pageLogInit(ctx, "Restore", "Restore NRDBMS", start)
 
-	params := models.DataTask{}
-	if !getDataWithReBind(logger, start, ctx, &params) {
-		errStr := "Invalid request data"
-		return ctx.JSON(http.StatusBadRequest, models.BasicResponse{
-			Result: logstrings.String(),
-			Error:  &errStr,
-		})
+	var req models.RestoreNRDBRequest
+	if err := ctx.Bind(&req); err != nil {
+		return ctx.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 	}
-	params.TaskMeta.TaskID = params.OperationId
+
+	if req.SourcePoint.BackupId == "" || req.TargetPoint.Provider == "" || req.TargetPoint.Region == "" {
+		return ctx.JSON(http.StatusBadRequest, map[string]string{"error": "sourcePoint.backupId, targetPoint.provider, targetPoint.region are required"})
+	}
+
+	switch req.TargetPoint.Provider {
+	case "aws":
+	case "gcp":
+		if req.TargetPoint.DatabaseID == "" {
+			return ctx.JSON(http.StatusBadRequest, map[string]string{"error": "targetPoint.databaseId is required"})
+		}
+	case "ncp", "alibaba":
+		if req.TargetPoint.Host == "" || req.TargetPoint.Port == "" || req.TargetPoint.User == "" || req.TargetPoint.Password == "" || req.TargetPoint.DatabaseName == "" {
+			return ctx.JSON(http.StatusBadRequest, map[string]string{"error": "targetPoint.host, targetPoint.port, targetPoint.username, targetPoint.password, targetPoint.databaseName are required"})
+		}
+	default:
+		return ctx.JSON(http.StatusBadRequest, map[string]string{"error": "unsupported provider: " + req.TargetPoint.Provider})
+	}
+
+	record, err := backup.GetRestorableBackup(req.SourcePoint.BackupId, "nrdbms")
+	if err != nil {
+		return ctx.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+
+	var params models.DataTask
+	params.TaskMeta.TaskID = uuid.New().String()
 	params.TaskMeta.TaskType = models.Restore
 	params.TaskMeta.ServiceType = models.NRDBMS
-	manager := task.GetFileScheduleManager()
+	params.TargetPoint.Provider = req.TargetPoint.Provider
+	params.TargetPoint.Region = req.TargetPoint.Region
+	params.TargetPoint.MySQLParams = req.TargetPoint.MySQLParams
+	params.TargetPoint.DatabaseID = req.TargetPoint.DatabaseID
+	params.SourcePoint.Path = record.Path
 
+	manager := task.GetFileScheduleManager()
 	if !manager.RunTaskOnce(params) {
 		return ctx.JSON(http.StatusInternalServerError, models.BasicResponse{
 			Result: logstrings.String(),
 			Error:  nil,
 		})
 	}
-	// backup success. Send result to client
+
 	jobEnd(logger, "Successfully Restore data", start)
 	return ctx.JSON(http.StatusOK, models.BasicResponse{
 		Result: logstrings.String(),

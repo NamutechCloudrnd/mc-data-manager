@@ -98,6 +98,23 @@ func ListBackups(serviceType string) ([]models.BackupListResponse, error) {
 	return responses, nil
 }
 
+func GetRestorableBackup(id, serviceType string) (*models.BackupRecord, error) {
+	record, err := repo().FindByID(id)
+	if err != nil {
+		return nil, err
+	}
+	if record.ServiceType != serviceType {
+		return nil, fmt.Errorf("this is a %s backup, not for %s", record.ServiceType, serviceType)
+	}
+	if record.Status != "completed" {
+		return nil, fmt.Errorf("backup is not completed (status: %s)", record.Status)
+	}
+	if !utils.DirExists(record.Path) {
+		return nil, fmt.Errorf("backup files not found at %s. Please remove this backup", record.Path)
+	}
+	return record, nil
+}
+
 func DeleteBackup(id string) error {
 	record, err := repo().FindByID(id)
 	if err != nil {
