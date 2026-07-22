@@ -34,41 +34,7 @@
                 <div class="form-floating">
                     <select class="form-select form-select-sm rounded-end" id="targetRegionSelect" name="targetPoint[region]">
                         <option value="none" selected> - </option>
-                        <optgroup label="AWS regions" data-provider="aws" style="display:none;">
-                            {{ range $index, $value := .AWSRegions }}
-                            <option value="{{ $value }}">{{ $value }}</option>
-                            {{ end }}
-                        </optgroup>
-                        <optgroup label="GCP regions" data-provider="gcp" style="display:none;">
-                            {{ range $index, $value := .GCPRegions }}
-                            <option value="{{ $value }}">{{ $value }}</option>
-                            {{ end }}
-                        </optgroup>
-                        <optgroup label="NCP regions" data-provider="ncp" style="display:none;">
-                            {{ range $index, $value := .NCPRegions }}
-                            <option value="{{ $value }}">{{ $value }}</option>
-                            {{ end }}
-                        </optgroup>
-                        <optgroup label="ALIBABA regions" data-provider="alibaba" style="display:none;">
-                            {{ range $index, $value := .ALIBABARegions }}
-                            <option value="{{ $value }}">{{ $value }}</option>
-                            {{ end }}
-                        </optgroup>
-                        <!-- <optgroup label="IBM regions" data-provider="ibm" style="display:none;">
-                            {{ range $index, $value := .IBMRegions }}
-                            <option value="{{ $value }}">{{ $value }}</option>
-                            {{ end }}
-                        </optgroup>
-                        <optgroup label="KT regions" data-provider="kt" style="display:none;">
-                            {{ range $index, $value := .KTRegions }}
-                            <option value="{{ $value }}">{{ $value }}</option>
-                            {{ end }}
-                        </optgroup>
-                        <optgroup label="TENCENT regions" data-provider="tencent" style="display:none;">
-                            {{ range $index, $value := .TencentRegions }}
-                            <option value="{{ $value }}">{{ $value }}</option>
-                            {{ end }}
-                        </optgroup> -->
+                        {{ template "region-optgroups-db.html" . }}
                     </select>
                     <label for="targetRegionSelect">Select Region</label>
                 </div>
@@ -94,8 +60,8 @@
                 </div>
             </div>
 
-            <!-- NCP Public Domain guide (page-level, English) — 인스턴스 생성 완료 즉시 자동 표시.
-                 공인 도메인이 반영될 때까지 Sample Data는 비활성, 상단 Refresh Host로 최신 Host를 재조회한다. -->
+            <!-- NCP Public Domain guide (page-level, English) — 선택된 인스턴스의 공인 도메인이
+                 반영될 때까지 Sample Data는 비활성, 상단 Refresh Host로 최신 Host를 재조회한다. -->
             <div id="ncp-pub-guide" class="alert alert-info py-2 px-3 mb-3 small d-none">
                 <div class="fw-semibold mb-1"><i class="bi bi-info-circle-fill me-1"></i>NCP Public Domain</div>
                 A Public Domain must be enabled in the NCP Console to connect from outside.<br>
@@ -104,11 +70,11 @@
                 After it is assigned, click <strong>Refresh Host</strong> to load the latest Host.
             </div>
 
-            <!-- 테이블 (항상 노출) -->
+            <!-- 테이블 (항상 노출) — 인스턴스 생성/삭제/샘플데이터는 공용 InstancePanel·SamplePanel(scripts.js)이 담당 -->
             <table class="table table-bordered table-sm mb-0">
                 <thead>
                     <tr>
-                        <th>ID</th>
+                        <th style="width:36px;"></th><th>ID</th>
                         <th>Name</th>
                         <th>Status</th>
                         <th>Version</th>
@@ -119,7 +85,7 @@
                 </thead>
                 <tbody id="rdb-table-body">
                     <tr>
-                        <td colspan="7" class="text-center text-muted small py-3">Select a credential and region to list instances</td>
+                        <td colspan="8" class="text-center text-muted small py-3">Select a credential and region to list instances</td>
                     </tr>
                 </tbody>
             </table>
@@ -127,221 +93,35 @@
         </div>
     </div>
 
-    <!-- ── Offcanvas: 인스턴스 생성 ──────────────────────── -->
-    <div class="offcanvas offcanvas-end" id="createOffcanvas" tabindex="-1" style="width: min(500px, 100vw);">
-        <div class="offcanvas-header border-bottom">
-            <h5 class="offcanvas-title fw-semibold" id="oc-title">
-                <i class="bi bi-plus-circle me-2 text-primary"></i>Create Instance
-            </h5>
-            <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
-        </div>
-        <div class="offcanvas-body">
-            <!-- 선택된 환경 표시 -->
-            <div class="alert alert-secondary py-2 px-3 mb-3 small">
-                <i class="bi bi-info-circle me-1"></i>
-                Target: <span id="oc-context-text" class="fw-semibold">—</span>
-            </div>
-
-            <!-- Engine / Version / Instance Class -->
-            <div id="section-db" class="d-none">
-                <div class="input-group mb-3">
-                    <span class="input-group-text rounded-start"><i class="bi bi-database-fill-gear"></i></span>
-                    <div class="form-floating">
-                        <select class="form-select rounded-end" id="engine" name="engine">
-                            <option value="">-</option>
-                        </select>
-                        <label for="engine">Engine</label>
-                    </div>
-                </div>
-                <div class="input-group mb-3">
-                    <span class="input-group-text rounded-start"><i class="bi bi-tag-fill"></i></span>
-                    <div class="form-floating">
-                        <select class="form-select rounded-end" id="engineVersion" name="engineVersion">
-                            <option value="">-</option>
-                        </select>
-                        <label for="engineVersion">Engine Version</label>
-                    </div>
-                </div>
-                <div class="input-group mb-0">
-                    <span class="input-group-text rounded-start"><i class="bi bi-collection-fill"></i></span>
-                    <div class="form-floating flex-grow-1 position-relative" id="icWrapper">
-                        <div class="form-select rounded-end d-flex align-items-center" id="icTrigger" role="combobox" tabindex="0"
-                             style="height:58px; cursor:pointer; user-select:none;">
-                            <span id="icTriggerText" class="text-muted">-</span>
-                        </div>
-                        <label>Instance Class</label>
-                        <div class="border rounded-2 shadow-sm bg-white position-absolute d-none" id="icPanel"
-                             style="top:calc(100% + 2px); left:0; z-index:1060; min-width:100%;">
-                            <div class="d-flex" style="max-height:200px;">
-                                <div id="icFamilyList" class="border-end" style="min-width:130px; width:45%; overflow-y:auto;"></div>
-                                <div id="icSizeList" style="flex:1; overflow-y:auto;"></div>
-                            </div>
-                        </div>
-                    </div>
-                    <input type="hidden" id="instanceClass" name="instanceClass">
-                </div>
-            </div>
-
-            <!-- Instance config -->
-            <div id="section-instance" class="d-none mt-3">
-                <div class="input-group mb-3">
-                    <span class="input-group-text rounded-start"><i class="bi bi-person-vcard-fill"></i></span>
-                    <div class="form-floating">
-                        <input type="text" class="form-control rounded-end" id="gen-mysql-instanceId" autocomplete="off" name="instanceId" placeholder="Instance ID" required>
-                        <label for="gen-mysql-instanceId">Instance ID</label>
-                    </div>
-                    <div class="invalid-feedback ps-2">This instance ID already exists.</div>
-                </div>
-                <div class="input-group mb-3" id="storage-group">
-                    <span class="input-group-text rounded-start"><i class="bi bi-archive-fill"></i></span>
-                    <div class="form-floating">
-                        <input type="number" class="form-control rounded-end" id="gen-mysql-allocatedStorage" autocomplete="off" name="allocatedStorage" placeholder="20" min="20" value="20" required>
-                        <label for="gen-mysql-allocatedStorage">Allocated Storage (GB)</label>
-                    </div>
-                    <div class="invalid-feedback ps-2" id="storage-invalid-feedback">Please enter 20 GB or more.</div>
-                </div>
-                <!-- margin은 provider별로 applyProviderRules가 토글: gcp/alibaba/ncp=mb-1, 그 외=mb-3 -->
-                <div class="input-group mb-3" id="username-input-group">
-                    <span class="input-group-text rounded-start"><i class="bi bi-person-fill"></i></span>
-                    <div class="form-floating">
-                        <input type="text" class="form-control rounded-end" id="gen-mysql-username" autocomplete="username" name="username" placeholder="Username" required>
-                        <label for="gen-mysql-username">Username</label>
-                    </div>
-                </div>
-                <div id="username-feedback" class="text-danger small ps-2 d-none mb-2"></div>
-                <div id="username-help" class="text-muted small ps-2 mb-2"></div>
-                <div class="input-group mb-1">
-                    <span class="input-group-text rounded-start"><i class="bi bi-lock-fill"></i></span>
-                    <div class="form-floating">
-                        <input type="password" class="form-control rounded-end" id="gen-mysql-password" name="password" placeholder="Password" required>
-                        <label for="gen-mysql-password">Password</label>
-                    </div>
-                </div>
-                <div id="password-feedback" class="text-danger small ps-2 d-none mb-2"></div>
-            </div>
-        </div>
-
-        <div class="offcanvas-footer p-3 border-top d-flex flex-column gap-2">
-            <button type="button" class="btn btn-primary w-100" id="submitBtn" disabled>Create</button>
-        </div>
-    </div>
-
-    <!-- ── Delete Confirmation Modal ───────────────────── -->
-    <div class="modal fade" id="deleteConfirmModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content">
-                <div class="modal-header border-bottom-0 pb-1">
-                    <h5 class="modal-title text-danger fw-semibold">Delete</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body pt-1">
-                    <p class="mb-2 small">You are about to permanently delete <strong id="delete-instance-name"></strong>.</p>
-                    <p class="mb-3 small" id="delete-modal-instruction">To delete this instance, enter its Name.</p>
-                    <input type="text" class="form-control" id="delete-username-input" placeholder="Name" autocomplete="off">
-                    <div id="delete-username-error" class="text-danger small mt-1 d-none">Name does not match.</div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-danger" id="deleteConfirmBtn" disabled>
-                        <i class="bi bi-trash3 me-1"></i>Delete
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
-
     <input type="hidden" id="genTarget" value="rdbms">
     <input type="hidden" id="targetPoint[provider]" value="none">
 </form>
 
+<!-- 인스턴스 생성 Offcanvas + 삭제 모달 / 샘플데이터 Offcanvas (공용 파셜) -->
+{{ template "instance-panel.html" . }}
+{{ template "sample-data-panel.html" . }}
+
 <style>
-.ic-family-item:hover  { background: #f0f0f0; cursor: pointer; }
-.ic-family-item.active { background: #0d6efd; color: #fff; }
-.ic-size-item:hover    { background: #f8f9fa; cursor: pointer; }
 @keyframes ic-spin      { to { transform: rotate(360deg); } }
 @keyframes ic-spin-slow { to { transform: rotate(360deg); } }
 .ic-spin      { animation: ic-spin 1.2s linear infinite; display: inline-block; }
 .ic-spin-slow { animation: ic-spin-slow 3s linear infinite; display: inline-block; }
-.offcanvas-footer { flex-shrink: 0; }
-.form-control:disabled, .datatable-input:disabled {
-    background-color: #E9ECEF !important;
-}
-#icTriggerText {
-    width: 100%;
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-}
 </style>
 
 <script>
 document.addEventListener('DOMContentLoaded', function () {
     const STATE_KEY = 'mc-gen-mysql';
+    const PAGE_SIZE = 10;
 
-    let engineVersionData = [];
-    let instanceClassData = [];
-    let phase             = 1;
-    let selectedInstance  = null;
-    let allInstances      = [];
-    let currentPage       = 1;
-    let searchQuery       = '';
-    const PAGE_SIZE       = 10;
-    let pollTimerId       = null;
-    let pollStartTime     = null;
-    let pollingInstanceId      = null;
-    // 폴링은 생성 시점의 provider+region으로 고정한다 → 리전/탭을 바꿔도 올바른 리전을 조회하고
-    // toolbar 배너가 status available까지 유지된다.
-    let pollProvider           = null;
-    let pollRegion             = null;
-    const RDB_POLL_INTERVAL_MS  = 5000;
-    // 생성 폴링 타임아웃 — RDS/Cloud SQL 등은 프로비저닝이 10분을 넘는 경우가 흔해(aws 포함) 25분으로 통일
-    const RDB_CREATE_TIMEOUT_MS = 25 * 60 * 1000;
-    function rdbCreateTimeoutMs() {
-        return RDB_CREATE_TIMEOUT_MS;
-    }
-    let deletePollTimerId    = null;
-    let deletePollInstanceId = null;
+    let allInstances     = [];
+    let selectedInstance = null;
+    let currentPage      = 1;
+    let searchQuery      = '';
 
-    const regionSelect        = document.getElementById('targetRegionSelect');
-    const engineSelect        = document.getElementById('engine');
-    const engineVersionSelect = document.getElementById('engineVersion');
-    const icWrapper           = document.getElementById('icWrapper');
-    const icTrigger           = document.getElementById('icTrigger');
-    const icTriggerText       = document.getElementById('icTriggerText');
-    const icPanel             = document.getElementById('icPanel');
-    const icFamilyList        = document.getElementById('icFamilyList');
-    const icSizeList          = document.getElementById('icSizeList');
-    const icHidden            = document.getElementById('instanceClass');
-    const actionBtn           = document.getElementById('submitBtn');
-    const openCreateBtn       = document.getElementById('openCreateBtn');
-    const deleteInstanceBtn   = document.getElementById('deleteInstanceBtn');
-    const sectionDb           = document.getElementById('section-db');
-    const sectionInstance     = document.getElementById('section-instance');
-    const offcanvasEl         = document.getElementById('createOffcanvas');
-
-    const offcanvas = new bootstrap.Offcanvas(offcanvasEl, { backdrop: true, scroll: false });
-
-    // Host가 샘플데이터 접속에 사용 가능한 상태인지 판정 (provider별)
-    //  - alibaba/ncp: 공인 도메인('pub' 포함)이어야 외부 접속 가능
-    //  - aws/gcp   : Host 값이 채워져 있으면 가능
-    function isHostReady(endpoint, provider) {
-        const host = endpoint || '';
-        const p = (provider || getProvider() || '').toLowerCase();
-        if (p === 'alibaba' || p === 'ncp') return host.includes('pub');
-        return !!host;
-    }
-
-    // 인스턴스 생성 폴링의 "종료" 판정 — pollStatus/복귀 시 1회 조회에서 공통 사용.
-    // 원칙: available + Host 값 존재 → 폴링 종료.
-    // 예외 alibaba: 백엔드가 공인('pub') 도메인을 자동 할당하므로 그때까지 폴링 유지.
-    // 주의 ncp: 공인 도메인은 사용자가 콘솔에서 수동 활성화해야 생기므로 폴링으로 기다리지 않는다
-    //          (기다리면 반드시 10분 타임아웃) — Sample Data 게이트(isHostReady)와 가이드가 담당.
-    function isInstanceReady(inst, provider) {
-        if (!inst || (inst.status || '').toLowerCase() !== 'available') return false;
-        const p = (provider || getProvider() || '').toLowerCase();
-        if (p === 'alibaba') return (inst.endpoint || '').includes('pub');
-        return !!inst.endpoint;
-    }
+    const regionSelect      = document.getElementById('targetRegionSelect');
+    const credSelect        = document.getElementById('targetCredentialSelect');
+    const openCreateBtn     = document.getElementById('openCreateBtn');
+    const deleteInstanceBtn = document.getElementById('deleteInstanceBtn');
 
     function getProvider() { return document.getElementById('targetPoint[provider]')?.value || ''; }
     function getRegion(val) {
@@ -349,369 +129,61 @@ document.addEventListener('DOMContentLoaded', function () {
         return getProvider() === 'ncp' ? r.toUpperCase() : r;
     }
 
-    function isUsernameValid() {
-        const val = document.getElementById('gen-mysql-username').value.trim();
-        if (!val) return false;
-        const provider = getProvider();
-        if (provider === 'alibaba') {
-            if (val.length > 32) return false;
-            if (!/^[a-zA-Z][a-zA-Z0-9_]*[a-zA-Z0-9]$/.test(val) && val.length !== 1) return false;
-            if (val.length === 1 && !/^[a-zA-Z]$/.test(val)) return false;
-            if (ALIBABA_BLOCKED_USERNAMES.includes(val.toLowerCase())) return false;
-        }
-        if (provider === 'ncp') {
-            if (NCP_BLOCKED_USERNAMES.includes(val.toLowerCase())) return false;
-        }
-        if (provider === 'gcp') {
-            if (val.toLowerCase() !== 'root') return false;
-        }
-        return true;
+    // Host가 샘플데이터 접속에 사용 가능한 상태인지 (alibaba/ncp: 공인 'pub' 도메인 필요)
+    function isHostReady(endpoint, provider) {
+        const host = endpoint || '';
+        const p = (provider || getProvider() || '').toLowerCase();
+        if (p === 'alibaba' || p === 'ncp') return host.includes('pub');
+        return !!host;
     }
 
-    // Alibaba: 클라이언트에서는 admin/root만 금지. 그 외(user 등)는 허용 —
-    // 실제 예약어 위반은 생성 시 CSP API 응답(InvalidAccountName.Forbid)으로 안내된다.
-    const ALIBABA_BLOCKED_USERNAMES = ['admin', 'root', 'user', 'test'];
-    const NCP_BLOCKED_USERNAMES     = ['root','admin','radmin','agent','api_admin','ha_admin',
-        'ragent','repl_admin','mysql.session','mysql.sys'];
-
-    const COMMON_PASSWORDS = ['password','password1','password123','12345678','123456789',
-        'qwerty123','p@ssw0rd','passw0rd','welcome1','admin123','admin1234','letmein1','iloveyou1'];
-
-    function isPasswordValid() {
-        const val = document.getElementById('gen-mysql-password').value;
-        if (!val) return false;
-        if (getProvider() !== 'alibaba') return true;
-        if (val.length < 8 || val.length > 32) return false;
-        const cats = [/[A-Z]/.test(val), /[a-z]/.test(val), /[0-9]/.test(val), /[!@#$%^&*()_+\-=]/.test(val)];
-        if (cats.filter(Boolean).length < 3) return false;
-        if (COMMON_PASSWORDS.includes(val.toLowerCase())) return false;
-        return true;
-    }
-
-    function getUsernameError(val) {
-        if (!val) return '';
-        const provider = getProvider();
-        if (provider === 'alibaba') {
-            if (val.length > 32) return 'Username must not exceed 32 characters.';
-            if (!/^[a-zA-Z0-9_]+$/.test(val)) return 'Username can only contain letters, numbers, and underscores (_).';
-            if (!/^[a-zA-Z]/.test(val)) return 'Username must start with a letter.';
-            if (!/[a-zA-Z0-9]$/.test(val)) return 'Username must end with a letter or number.';
-            if (ALIBABA_BLOCKED_USERNAMES.includes(val.toLowerCase())) return `'${val}' is not allowed as a username.`;
-        }
-        if (provider === 'ncp') {
-            if (NCP_BLOCKED_USERNAMES.includes(val.toLowerCase())) return `'${val}' is not allowed as a username.`;
-        }
-        if (provider === 'gcp') {
-            if (val.toLowerCase() !== 'root') return "Only 'root' is allowed.";
-        }
-        return '';
-    }
-
-    // provider별 username 정책을 검증 메시지가 아닌 "안내(helper)"로 표시 (요구사항 3)
-    function usernameHelpText(provider) {
-        switch (provider) {
-            case 'gcp':     return "Only 'root' is allowed.";
-            case 'alibaba': return "Not allowed: admin, root, user, test.";
-            case 'ncp':     return "Not allowed: root, admin, radmin, agent, api_admin, ha_admin, ragent, repl_admin, mysql.session, mysql.sys.";
-            default:        return '';
-        }
-    }
-    function updateUsernameHelp() {
-        const el = document.getElementById('username-help');
-        if (el) el.textContent = usernameHelpText(getProvider());
-    }
-    function showUsernameFeedback(msg) {
-        const fb = document.getElementById('username-feedback');
-        if (!fb) return;
-        fb.textContent = msg || '';
-        fb.classList.toggle('d-none', !msg);
-    }
-
-    function getPasswordError(val) {
-        if (!val) return '';
-        if (val.length < 8 || val.length > 32) return 'Password must be 8–32 characters.';
-        const cats = [/[A-Z]/.test(val), /[a-z]/.test(val), /[0-9]/.test(val), /[!@#$%^&*()_+\-=]/.test(val)];
-        if (cats.filter(Boolean).length < 3) return 'Include at least 3 of: uppercase, lowercase, digit, special character (!@#$%^&*()_+-=).';
-        if (COMMON_PASSWORDS.includes(val.toLowerCase())) return 'This password is too common. Please choose a stronger password.';
-        return '';
-    }
-
-    function applyProviderRules() {
-        const provider   = getProvider();
-        const usernameEl = document.getElementById('gen-mysql-username');
-        const storageEl  = document.getElementById('gen-mysql-allocatedStorage');
-        const storageFb  = document.getElementById('storage-invalid-feedback');
-        const usernameFb = document.getElementById('username-feedback');
-
-        // GCP username은 root만 허용하되, 강제 채움/readonly가 아니라 검증+안내로만 처리한다
-        // (getUsernameError / isUsernameValid / usernameHelpText).
-        usernameEl.readOnly = false;
-        if (provider === 'gcp') {
-            storageEl.min       = '10';
-            storageEl.value     = '10';
-            if (storageFb) storageFb.textContent = 'Please enter 10 GB or more.';
-        } else {
-            if (provider === 'alibaba') {
-                storageEl.min   = '20';
-                storageEl.value = '20';
-                if (storageFb) storageFb.textContent = 'Please enter 20 GB or more.';
-            } else {
-                storageEl.min = '20';
-                if (storageFb) storageFb.textContent = 'Please enter 20 GB or more.';
-                if (Number(storageEl.value) < 20) storageEl.value = '20';
+    // ── 인스턴스 생성/삭제/샘플데이터 (공용 InstancePanel + SamplePanel) ──
+    const instPanel = InstancePanel.init({
+        kind: 'rdbms',
+        getProvider: () => getProvider(),
+        getRegion: () => getRegion(),
+        getCredLabel: () => credSelect?.selectedOptions?.[0]?.textContent?.trim(),
+        createBtn: openCreateBtn,
+        deleteBtn: deleteInstanceBtn,
+        // 인스턴스 선택 시 '+ Instance' → '+ Sample Data' 전환 (SamplePanel이 /generate/rdbms 제출)
+        sample: {},
+        getSelected: () => selectedInstance,
+        getRows: () => allInstances,
+        onData: (instances) => {
+            allInstances = instances || [];
+            if (selectedInstance && !allInstances.some(i => i.instanceId === selectedInstance.instanceId)) {
+                selectedInstance = null;
+            } else if (selectedInstance) {
+                // 폴링/재조회로 endpoint가 갱신되면 선택 상태에도 반영 (Sample Data 게이트용)
+                const cur = allInstances.find(i => i.instanceId === selectedInstance.instanceId);
+                if (cur) { selectedInstance.endpoint = cur.endpoint; selectedInstance.port = cur.port; }
             }
-        }
-        if (usernameFb) { usernameFb.textContent = ''; usernameFb.classList.add('d-none'); }
-        // Username 컨테이너 여백: 검증 메시지가 바로 아래 붙는 provider(gcp/alibaba/ncp)는 mb-1, 그 외 mb-3
-        const unGrp = document.getElementById('username-input-group');
-        if (unGrp) {
-            const tight = ['gcp', 'alibaba', 'ncp'].includes(provider);
-            unGrp.classList.toggle('mb-1', tight);
-            unGrp.classList.toggle('mb-3', !tight);
-        }
-        const pwFb = document.getElementById('password-feedback');
-        if (pwFb) { pwFb.textContent = ''; pwFb.classList.add('d-none'); }
-        updateUsernameHelp();
-        updateButton();
-    }
-
-    function icSplit(cls) {
-        if (getProvider() === 'gcp') {
-            const parts = cls.split('-');
-            return { family: parts.slice(0, 2).join('-'), size: parts.slice(2).join('-') };
-        }
-        if (getProvider() === 'ncp') {
-            const parts = cls.split('.');
-            return { family: parts.slice(0, 4).join('.'), size: parts.slice(4).join('.') };
-        }
-        const parts = cls.split('.');
-        return { family: parts.slice(0, 2).join('.'), size: parts.slice(2).join('.') };
-    }
-
-    function esc(s) {
-        return String(s == null ? '—' : s)
-            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    }
-
-    // ── 인스턴스 생성 버튼 활성화 (region 선택 시) ────────
-    function updateCreateBtn() {
-        const region = regionSelect.value;
-        openCreateBtn.disabled = !region || region === 'none';
-    }
-
-    // ── Offcanvas 컨텍스트 표시 업데이트 ─────────────────
-    function updateOcContext() {
-        const credSel  = document.getElementById('targetCredentialSelect');
-        const credText = credSel.options[credSel.selectedIndex]?.textContent?.trim() || '—';
-        const region   = regionSelect.value;
-        document.getElementById('oc-context-text').textContent =
-            (region && region !== 'none') ? `${credText} / ${region}` : '—';
-    }
-
-    document.getElementById('instance-search').addEventListener('input', function () {
-        searchQuery = this.value;
-        currentPage = 1;
-        applyFilter();
+            currentPage = 1;
+            applyFilter();
+            instPanel.refreshButtons();
+            updateNcpPublicUI();
+        },
     });
-
-    // 미선택 상태로 '+ Instance'를 열 때 offcanvas 폼을 전부 초기화한다.
-    function resetCreateForm() {
-        phase = 1;
-        selectedInstance = null;
-        document.querySelectorAll('tr.rdb-row.table-active').forEach(r => r.classList.remove('table-active'));
-        deleteInstanceBtn.disabled = true;
-        openCreateBtn.innerHTML = '<i class="bi bi-plus-lg me-1"></i>Instance';
-        document.getElementById('oc-title').innerHTML = '<i class="bi bi-plus-circle me-2 text-primary"></i>Create Instance';
-        // engine select 재구성 (engine-versions가 로드돼 있으면 채움)
-        resetSelect(engineSelect, '-');
-        if (engineVersionData.length > 0) {
-            [...new Set(engineVersionData.map(d => d.engine))].forEach(engine => {
-                const opt = document.createElement('option');
-                opt.value = engine; opt.textContent = engine;
-                engineSelect.appendChild(opt);
-            });
-        }
-        resetSelect(engineVersionSelect, '-');
-        icReset();
-        setCreationFieldsDisabled(false);
-        document.getElementById('storage-group').classList.remove('d-none');
-        document.getElementById('gen-mysql-instanceId').value        = '';
-        clearInstanceIdInvalid();
-        document.getElementById('gen-mysql-allocatedStorage').value  = '20';
-        document.getElementById('gen-mysql-username').value          = '';
-        document.getElementById('gen-mysql-password').value          = '';
-        showUsernameFeedback('');
-        updateUsernameHelp();
-        updateNcpPublicUI(); // 페이지 레벨 가이드는 대상 인스턴스 기준으로 유지/숨김
-        sectionInstance.classList.add('d-none');
-        sectionDb.classList.toggle('d-none', engineVersionData.length === 0);
-    }
-
-    openCreateBtn.addEventListener('click', () => {
-        updateOcContext();
-        // 인스턴스를 선택한 상태(phase 3): enterSelectMode가 채운 폼 유지
-        if (phase === 3 && selectedInstance) { offcanvas.show(); return; }
-        // 그 외(미선택): 폼 전체 초기화 후 표시 — 생성/삭제 진행 상태는 테이블 Status로만 표시
-        resetCreateForm();
-        applyProviderRules();
-        offcanvas.show();
-    });
-
-    // ── sessionStorage ────────────────────────────────────
-    // 복원 범위는 credential/region + 생성 폴링 상태로 한정한다.
-    // 폼 필드·phase·섹션 표시까지 복원하면 이전 인스턴스 값이
-    // offcanvas에 유령처럼 남는 문제가 생긴다 (같은 값 재선택 시 change 미발생).
-    function saveState() {
-        try {
-            sessionStorage.setItem(STATE_KEY, JSON.stringify({
-                credentialId: document.getElementById('targetCredentialSelect').value,
-                provider:     getProvider(),
-                region:       regionSelect.value,
-                pollingInstanceId,
-                pollStartTime,
-                // 삭제 중 인스턴스: 페이지 복귀 후에도 삭제 폴링을 이어가기 위해 보존
-                deletePollInstanceId,
-            }));
-        } catch (e) { console.warn('saveState:', e); }
-    }
-
-    function clearState() { sessionStorage.removeItem(STATE_KEY); }
-
-    // ── 페이지 복귀 시 상태 확인 ─────────────────────────────
-    // 추적 중이던 생성 인스턴스의 상태를 1회 조회해:
-    //  - available(완료)·목록에 없음 → 폴링 시작하지 않고 추적 상태 정리
-    //  - 아직 생성 중 → 폴링 시작 (available이 되면 pollStatus가 즉시 중지)
-    async function checkAndResumePolling(instanceId) {
-        const prov = getProvider();
-        const reg  = getRegion();
-        try {
-            const res = await fetch('/db/rdbms', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ provider: prov, region: reg })
-            });
-            if (!res.ok) return;
-            const instances = await res.json();
-            renderTable(instances);
-            const found = Array.isArray(instances)
-                ? instances.find(i => i.instanceId === instanceId) : null;
-            if (!found || isInstanceReady(found)) {
-                pollingInstanceId = null;
-                // NCP: 복귀 시에도 공인 도메인 미반영이면 Public Domain 가이드 자동 표시
-                if (found && prov === 'ncp' && !isHostReady(found.endpoint, 'ncp')) {
-                    ncpGuideInstanceId = instanceId;
-                    updateNcpPublicUI();
-                }
-                saveState(); // 추적 종료를 저장 (다음 복귀 시 재조회 방지)
-                return;
-            }
-            startPolling(instanceId);
-        } catch (e) { console.error('checkAndResumePolling:', e); }
-    }
-
-    async function restoreState() {
-        const raw = sessionStorage.getItem(STATE_KEY);
-        if (!raw) return;
-        let s;
-        try { s = JSON.parse(raw); } catch { return; }
-
-        const credSel = document.getElementById('targetCredentialSelect');
-        if (s.credentialId) {
-            credSel.value = s.credentialId;
-            const opt  = credSel.options[credSel.selectedIndex];
-            const prov = opt?.dataset?.provider || s.provider || '';
-            if (prov && prov !== 'none') {
-                document.getElementById('targetPoint[provider]').value = prov;
-                document.querySelectorAll('#targetRegionSelect optgroup').forEach(og => {
-                    og.style.display = og.dataset.provider === prov ? '' : 'none';
-                });
-            }
-        }
-
-        if (!s.region || s.region === 'none') return;
-        regionSelect.value = s.region;
-        // change 핸들러가 saveState()를 호출하므로 폴링 추적 변수를 dispatch 전에 먼저 복원한다.
-        // (미복원 시 null 상태로 저장돼 두 번째 페이지 복귀부터 생성 폴링이 재개되지 않음)
-        pollingInstanceId = s.pollingInstanceId || null;
-        if (s.pollStartTime) pollStartTime = s.pollStartTime;
-        // 수동 선택과 동일한 경로로 초기화·조회를 수행한다
-        // (폼 클리어 → 테이블 로드 → engine-versions 로드).
-        // 폼 필드·phase는 복원하지 않는다 — 새로고침 후에도 offcanvas는 항상 빈 생성 폼
-        regionSelect.dispatchEvent(new Event('change'));
-
-        // 삭제 폴링 재개 — 목록 렌더 전에 지정해 첫 렌더부터 deleting으로 표시
-        if (s.deletePollInstanceId) {
-            startDeletePolling(s.deletePollInstanceId);
-        }
-
-        // 생성 추적 중 새로고침/페이지 복귀 대응:
-        // 상태를 1회 조회해 available이면 폴링하지 않고, 아직 생성 중일 때만 폴링을 시작한다.
-        if (s.pollingInstanceId) {
-            checkAndResumePolling(s.pollingInstanceId);
-        }
-    }
-
-    function waitForCredentials() {
-        return new Promise(resolve => {
-            const credSel = document.getElementById('targetCredentialSelect');
-            if (credSel.options.length > 1) { resolve(); return; }
-            const obs = new MutationObserver(() => {
-                if (credSel.options.length > 1) { obs.disconnect(); resolve(); }
-            });
-            obs.observe(credSel, { childList: true });
-            setTimeout(() => { obs.disconnect(); resolve(); }, 3000);
-        });
-    }
-
-    // ── Status 배지 ───────────────────────────────────────
-    function statusBadge(status) {
-        const s = (status || '').toLowerCase();
-        if (s === 'available') {
-            return `<span class="text-success small"><i class="bi bi-check-circle-fill me-1"></i>available</span>`;
-        }
-        if (s === 'deleting') {
-            return `<span class="text-danger small"><span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>deleting</span>`;
-        }
-        if (s === 'failed') {
-            return `<span class="text-danger small"><i class="bi bi-x-circle-fill me-1"></i>failed</span>`;
-        }
-        // 그 외 상태(net_creating 등)는 API가 반환한 값을 그대로 표시한다
-        return `<span class="text-primary small"><i class="bi bi-hourglass-split ic-spin me-1"></i>${esc(s || '-')}</span>`;
-    }
 
     function makeRow(i) {
-        const available = (i.status || '').toLowerCase() === 'available';
         const iid = i.instanceId || i.name || '';
         const isSelected = selectedInstance && selectedInstance.instanceId === iid;
-        const username = i.masterUsername
-            || localStorage.getItem('rdb-username-' + (i.instanceId || ''))
-            || localStorage.getItem('rdb-username-' + (i.name || ''))
-            || '';
         return `<tr class="rdb-row${isSelected ? ' table-active' : ''}"
                 style="cursor:pointer;"
-                data-instance-id="${esc(iid)}"
-                data-engine="${esc(i.engine || '')}"
-                data-engine-version="${esc(i.engineVersion || '')}"
-                data-instance-class="${esc(i.instanceClass || '')}"
-                data-allocated-storage="${esc(String(i.allocatedStorage || ''))}"
-                data-endpoint="${esc(i.endpoint || '')}"
-                data-port="${esc(String(i.port || ''))}"
-                data-name="${esc(i.name || iid)}"
-                data-master-username="${esc(username)}"
-                data-available="${available ? '1' : '0'}">
-            <td class="small">${esc(i.instanceId || '-')}</td>
-            <td class="small">${esc(i.name || i.instanceId)}</td>
-            <td>${statusBadge(i.status)}</td>
-            <td class="small">${esc(i.engineVersion)}</td>
-            <td class="small text-truncate" style="max-width:200px;" title="${esc(i.endpoint)}">${esc(i.endpoint)}</td>
-            <td class="small">${esc(String(i.port))}</td>
-            <td class="small">${esc(i.instanceClass)}</td>
+                data-instance-id="${escHtml(iid)}"
+                data-endpoint="${escHtml(i.endpoint || '')}"
+                data-port="${escHtml(String(i.port || ''))}"
+                data-name="${escHtml(i.name || iid)}"
+                data-status="${escHtml(i.status || '')}">
+            <td class="text-center align-middle"><input type="checkbox" class="form-check-input row-select"${isSelected ? ' checked' : ''}></td>
+            <td class="small">${escHtml(i.instanceId || '-')}</td>
+            <td class="small">${escHtml(i.name || i.instanceId)}</td>
+            <td>${instanceStatusBadge(i.status)}</td>
+            <td class="small">${escHtml(i.engineVersion)}</td>
+            <td class="small text-truncate" style="max-width:200px;" title="${escHtml(i.endpoint)}">${escHtml(i.endpoint)}</td>
+            <td class="small">${escHtml(String(i.port))}</td>
+            <td class="small">${escHtml(i.instanceClass)}</td>
         </tr>`;
-    }
-
-    function renderTable(instances) {
-        allInstances = instances || [];
-        currentPage  = 1;
-        applyFilter();
     }
 
     function applyFilter() {
@@ -725,7 +197,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (currentPage > totalPages) currentPage = totalPages;
 
         if (!filtered.length) {
-            tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted small py-3">No instances found</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted small py-3">No instances found</td></tr>';
         } else {
             const start = (currentPage - 1) * PAGE_SIZE;
             tbody.innerHTML = filtered.slice(start, start + PAGE_SIZE).map(makeRow).join('');
@@ -733,166 +205,42 @@ document.addEventListener('DOMContentLoaded', function () {
                 row.addEventListener('click', () => onRowClick(row));
             });
         }
-
-        renderPagination(totalPages, filtered.length);
+        // totalPages는 이미 페이지 수 (215행에서 계산)
+        renderPagination(document.getElementById('rdb-pagination'), totalPages, currentPage,
+            p => { currentPage = p; applyFilter(); });
     }
 
-    function renderPagination(totalPages, totalFiltered) {
-        const container = document.getElementById('rdb-pagination');
-        if (totalPages <= 1) { container.innerHTML = ''; return; }
-
-        const range = [];
-        if (totalPages <= 7) {
-            for (let p = 1; p <= totalPages; p++) range.push(p);
-        } else {
-            range.push(1);
-            if (currentPage > 3) range.push('...');
-            const s = Math.max(2, currentPage - 1);
-            const e = Math.min(totalPages - 1, currentPage + 1);
-            for (let p = s; p <= e; p++) range.push(p);
-            if (currentPage < totalPages - 2) range.push('...');
-            range.push(totalPages);
-        }
-
-        const prev = `<li class="page-item ${currentPage === 1 ? 'disabled' : ''}"><a class="page-link" href="#" data-page="${currentPage - 1}">‹</a></li>`;
-        const next = `<li class="page-item ${currentPage === totalPages ? 'disabled' : ''}"><a class="page-link" href="#" data-page="${currentPage + 1}">›</a></li>`;
-        const pages = range.map(p =>
-            p === '...'
-                ? `<li class="page-item disabled"><span class="page-link">…</span></li>`
-                : `<li class="page-item ${p === currentPage ? 'active' : ''}"><a class="page-link" href="#" data-page="${p}">${p}</a></li>`
-        ).join('');
-
-        container.innerHTML = `<nav><ul class="pagination pagination-sm mb-0 justify-content-center">${prev}${pages}${next}</ul></nav>`;
-        container.querySelectorAll('a.page-link').forEach(link => {
-            link.addEventListener('click', e => {
-                e.preventDefault();
-                const p = parseInt(link.dataset.page);
-                if (!isNaN(p) && p >= 1 && p <= totalPages && p !== currentPage) {
-                    currentPage = p;
-                    applyFilter();
-                }
-            });
-        });
-    }
-
+    // 행 클릭 = 선택 토글. available이 아니어도(failed 등) 선택 허용 — 잔재 삭제 가능.
+    // '+ Sample Data' 전환/버튼 상태는 InstancePanel.refreshButtons가 담당.
     function onRowClick(row) {
         const d = row.dataset;
-        // available이 아니어도(failed 등) 선택은 허용 — 잔재 인스턴스를 UI에서
-        // 삭제할 수 있어야 한다. 샘플데이터 폼 채움은 아래에서 available만 진행
         if (selectedInstance && selectedInstance.instanceId === d.instanceId) {
             selectedInstance = null;
-            document.querySelectorAll('tr.rdb-row.table-active').forEach(r => r.classList.remove('table-active'));
-            exitSelectMode();
-            return;
+        } else {
+            selectedInstance = {
+                instanceId: d.instanceId,
+                endpoint:   d.endpoint,
+                port:       d.port,
+                name:       d.name,
+            };
         }
-        document.querySelectorAll('tr.rdb-row.table-active').forEach(r => r.classList.remove('table-active'));
-        row.classList.add('table-active');
-        selectedInstance = {
-            instanceId:     d.instanceId,
-            engine:         d.engine,
-            engineVersion:  d.engineVersion,
-            instanceClass:  d.instanceClass,
-            allocatedStorage: d.allocatedStorage,
-            endpoint:       d.endpoint,
-            port:           d.port,
-            name:           d.name,
-            masterUsername: d.masterUsername
-        };
-        // 샘플데이터 진입 조건: available + Host 값 존재.
-        //  - failed 등 미가용, 또는 Host가 아직 '-'인 인스턴스는 선택(삭제 가능)까지만 허용.
-        //  - ncp 사설 도메인(pub 없음)은 진입은 허용하되 Submit 게이트(isHostReady)가 차단하고
-        //    가이드 + Refresh Host로 공인 도메인 활성화를 안내한다.
-        if (d.available !== '1' || !d.endpoint) {
-            if (phase === 3) exitSelectMode();
-            deleteInstanceBtn.disabled = false;
-            return;
-        }
-        openCreateBtn.innerHTML = '<i class="bi bi-plus-lg me-1"></i>Sample Data';
-        // 행 클릭 = 선택만. Offcanvas는 "Sample Data" 버튼(openCreateBtn)을 눌러야 연다 —
-        // 삭제만 하려는 사용자가 행을 클릭했을 때 상세 폼이 강제로 열리는 것을 방지.
-        enterSelectMode();
-        updateOcContext();
-    }
-
-    function enterSelectMode() {
-        const inst = selectedInstance;
-
-        // Engine select
-        if (inst.engine && ![...engineSelect.options].some(o => o.value === inst.engine)) {
-            const opt = document.createElement('option');
-            opt.value = inst.engine; opt.textContent = inst.engine;
-            engineSelect.appendChild(opt);
-        }
-        if (inst.engine) engineSelect.value = inst.engine;
-
-        // Engine Version select
-        if (inst.engineVersion && ![...engineVersionSelect.options].some(o => o.value === inst.engineVersion)) {
-            const opt = document.createElement('option');
-            opt.value = inst.engineVersion; opt.textContent = inst.engineVersion;
-            engineVersionSelect.appendChild(opt);
-        }
-        if (inst.engineVersion) engineVersionSelect.value = inst.engineVersion;
-
-        // Instance Class
-        icHidden.value = inst.instanceClass || '';
-        icTriggerText.textContent = inst.instanceClass || '-';
-        icTriggerText.classList.toggle('text-muted', !inst.instanceClass);
-
-        // Instance fields
-        document.getElementById('gen-mysql-instanceId').value      = inst.instanceId;
-        clearInstanceIdInvalid();
-        // 요구사항 1: 샘플데이터 생성 시 Username은 자동 채우지 않고 비운 채 사용자가 직접 입력.
-        // provider 정책은 username-help(안내)로 표시, 오류는 API 응답 기반으로 표시.
-        const unEl = document.getElementById('gen-mysql-username');
-        unEl.value = '';
-        unEl.readOnly = false;
-        document.getElementById('gen-mysql-password').value        = '';
-        showUsernameFeedback('');
-        updateUsernameHelp();
-
-        setCreationFieldsDisabled(true);
-        document.getElementById('storage-group').classList.add('d-none');
-
-        sectionDb.classList.remove('d-none');
-        sectionInstance.classList.remove('d-none');
-
-        document.getElementById('oc-title').innerHTML = '<i class="bi bi-plus-circle me-2 text-primary"></i>Create Sample Data';
-        deleteInstanceBtn.disabled = false;
-
-        phase = 3;
-        updateButton();
-    }
-
-    function exitSelectMode() {
-        // 선택 해제 시 툴바 버튼을 생성 모드(+ Instance)로 복원
-        openCreateBtn.innerHTML = '<i class="bi bi-plus-lg me-1"></i>Instance';
-        document.getElementById('oc-title').innerHTML = '<i class="bi bi-plus-circle me-2 text-primary"></i>Create Instance';
-        deleteInstanceBtn.disabled = true;
-        document.getElementById('storage-group').classList.remove('d-none');
-        resetSelect(engineSelect, '-');
-        resetSelect(engineVersionSelect, '-');
-        document.getElementById('gen-mysql-instanceId').value       = '';
-        clearInstanceIdInvalid();
-        document.getElementById('gen-mysql-allocatedStorage').value  = '20';
-        document.getElementById('gen-mysql-username').value          = '';
-        document.getElementById('gen-mysql-password').value          = '';
-        icReset();
-        sectionDb.classList.add('d-none');
-        applyProviderRules();
-        updateNcpPublicUI(); // 선택 해제 후에도 생성 완료 인스턴스의 가이드는 유지
-        const bsOC = bootstrap.Offcanvas.getInstance(offcanvasEl);
-        if (bsOC) bsOC.hide();
+        document.querySelectorAll('tr.rdb-row').forEach(r =>
+            r.classList.toggle('table-active', selectedInstance && r.dataset.instanceId === selectedInstance.instanceId));
+        instPanel.refreshButtons();
+        updateNcpPublicUI();
     }
 
     async function loadTable() {
-        stopDeletePolling();
         const provider = getProvider();
         const region   = getRegion();
         if (!provider || provider === 'none' || !region || region === 'none') {
             allInstances = [];
+            selectedInstance = null;
             document.getElementById('rdb-table-body').innerHTML =
-                '<tr><td colspan="7" class="text-center text-muted small py-3">When you select a Credential and Region, the instance list is retrieved.</td></tr>';
+                '<tr><td colspan="8" class="text-center text-muted small py-3">When you select a Credential and Region, the instance list is retrieved.</td></tr>';
             document.getElementById('rdb-pagination').innerHTML = '';
+            instPanel.refreshButtons();
+            updateNcpPublicUI();
             return;
         }
         try {
@@ -900,612 +248,91 @@ document.addEventListener('DOMContentLoaded', function () {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ provider, region })
             });
-            if (!res.ok) { renderTable([]); return; }
-            renderTable(await res.json());
-        } catch (e) { console.error('loadTable:', e); renderTable([]); }
-        finally { updateNcpPublicUI(); } // 최신 목록 기준으로 NCP 가이드 표시/숨김 갱신
-    }
-
-    // ── button state ──────────────────────────────────────
-    function resetSelect(sel, placeholder) {
-        sel.replaceChildren();
-        const opt = document.createElement('option');
-        opt.value = ''; opt.textContent = placeholder;
-        sel.appendChild(opt);
-    }
-
-    function updateButton() {
-        if (phase === 3) {
-            const un = document.getElementById('gen-mysql-username').value.trim();
-            const pw = document.getElementById('gen-mysql-password').value.trim();
-            // Host 준비 게이트: alibaba/ncp는 공인('pub') 도메인, aws/gcp는 Host 존재 필요
-            const hostOk = isHostReady(selectedInstance && selectedInstance.endpoint);
-            updateNcpPublicUI(); // NCP는 가이드로 안내
-            actionBtn.disabled = !(un && pw && hostOk);
-            actionBtn.textContent = 'Submit';
-            return;
-        }
-        const storageEl  = document.getElementById('gen-mysql-allocatedStorage');
-        const storageMin = Number(storageEl.min) || 20;
-        const storageOk  = storageEl.value !== '' && Number(storageEl.value) >= storageMin;
-        const ok = document.getElementById('gen-mysql-instanceId').value.trim()
-            && !isInstanceIdDup()
-            && storageOk
-            && isUsernameValid()
-            && isPasswordValid()
-            && icHidden.value;
-        actionBtn.disabled = !ok;
-        actionBtn.textContent = 'Create';
+            if (!res.ok) { instPanel.onData([]); return; }
+            instPanel.onData(await res.json());
+        } catch (e) { console.error('loadTable:', e); instPanel.onData([]); }
     }
 
     // ── NCP Public Domain 가이드 (페이지 레벨) ──────────
-    // 표시 조건: NCP + 대상 인스턴스(방금 생성 완료 또는 선택된 인스턴스)의 Host가 아직 사설('pub' 미포함).
-    // 인스턴스 생성 완료 시 사용자 조작 없이 자동으로 표시되고, Refresh Host로 공인 도메인이
-    // 반영되면 자동으로 숨겨진다 (그때 Sample Data 허용 — isHostReady 게이트).
-    let ncpGuideInstanceId = null; // 방금 생성 완료된 NCP 인스턴스 (가이드 대상)
-
-    function ncpGuideTarget() {
-        if (getProvider() !== 'ncp') return null;
-        if (phase === 3 && selectedInstance) return selectedInstance;
-        if (ncpGuideInstanceId) {
-            return allInstances.find(i => i.instanceId === ncpGuideInstanceId) || null;
-        }
-        return null;
-    }
-
+    // 표시 조건: NCP + 선택된 인스턴스의 Host가 아직 사설('pub' 미포함).
+    // 공인 도메인 반영 전에는 Sample Data가 비활성(SamplePanel.canOpen의 hostReady 게이트)이며,
+    // Refresh Host로 최신 Host를 재조회한다.
     function updateNcpPublicUI() {
-        const target = ncpGuideTarget();
+        const target = (getProvider() === 'ncp' && selectedInstance) ? selectedInstance : null;
         const needsPublic = !!target && !isHostReady(target.endpoint, 'ncp');
         document.getElementById('ncp-pub-guide').classList.toggle('d-none', !needsPublic);
-        // Refresh Host 버튼(목록 우측 상단): NCP + 대상 인스턴스가 있을 때만 노출
         document.getElementById('refresh-endpoint-btn').classList.toggle('d-none', !target);
     }
 
-    // 기존 인스턴스와 중복된 Instance ID인지 (생성 폼 검증)
-    function isInstanceIdDup() {
-        const v = document.getElementById('gen-mysql-instanceId').value.trim();
-        return !!v && allInstances.some(i => i.instanceId === v || i.name === v);
-    }
-    function clearInstanceIdInvalid() {
-        const el = document.getElementById('gen-mysql-instanceId');
-        el.classList.remove('is-invalid');
-        el.closest('.form-floating').classList.remove('is-invalid');
-    }
-    document.getElementById('gen-mysql-instanceId').addEventListener('input', function () {
-        const dup = isInstanceIdDup();
-        this.classList.toggle('is-invalid', dup);
-        this.closest('.form-floating').classList.toggle('is-invalid', dup);
-        updateButton();
-        saveState();
-    });
-    document.getElementById('gen-mysql-username').addEventListener('input', function () {
-        // 확실한 클라이언트 규칙(gcp=root만, ncp/alibaba 금지어)은 입력 즉시 검증 메시지로 표시하고,
-        // 규칙에 없는 예약어 등은 helper 안내 + 생성 시 API 응답으로 커버한다.
-        showUsernameFeedback(getUsernameError(this.value.trim()));
-        updateButton();
-        saveState();
-    });
-    document.getElementById('gen-mysql-allocatedStorage').addEventListener('input', function () {
-        const min     = Number(this.min) || 20;
-        const invalid = this.value !== '' && Number(this.value) < min;
-        this.classList.toggle('is-invalid', invalid);
-        this.closest('.form-floating').classList.toggle('is-invalid', invalid);
-        updateButton();
-        saveState();
-    });
-    document.getElementById('gen-mysql-password').addEventListener('input', function () {
-        if (getProvider() === 'alibaba') {
-            const pwFb = document.getElementById('password-feedback');
-            const msg = getPasswordError(this.value);
-            pwFb.textContent = msg;
-            pwFb.classList.toggle('d-none', !msg);
-        }
-        updateButton();
-    });
-
-    // ── Delete flow ──────────────────────────────────────
-    const deleteConfirmModal = new bootstrap.Modal(document.getElementById('deleteConfirmModal'));
-
-    document.getElementById('deleteConfirmModal').addEventListener('show.bs.modal', function () {
-        document.getElementById('delete-username-input').value = '';
-        document.getElementById('delete-username-error').classList.add('d-none');
-        document.getElementById('deleteConfirmBtn').disabled = true;
-    });
-
-    deleteInstanceBtn.addEventListener('click', function () {
-        const inst = selectedInstance;
-        if (!inst) return;
-        const nameEl = document.getElementById('delete-instance-name');
-        nameEl.textContent = inst.instanceId;
-        const instrEl = document.getElementById('delete-modal-instruction');
-        instrEl.textContent = 'To delete this instance, enter its Name: ' + inst.name;
-        deleteConfirmModal.show();
-    });
-
-    document.getElementById('delete-username-input').addEventListener('input', function () {
-        const inst = selectedInstance;
-        if (!inst) return;
-        const expected = inst.name;
-        const match = this.value === expected;
-        const isEmpty = !this.value;
-        document.getElementById('delete-username-error').classList.toggle('d-none', isEmpty || match);
-        document.getElementById('deleteConfirmBtn').disabled = !match;
-    });
-
-    document.getElementById('deleteConfirmBtn').addEventListener('click', async function () {
-        const inst = selectedInstance;
-        if (!inst) return;
-        const btn = this;
-        btn.disabled = true;
-        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Deleting...';
-        const provider = getProvider();
-        const region = getRegion();
-        try {
-            const r = await fetch('/db/rdbms', {
-                method: 'DELETE',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ provider, region, instanceId: inst.instanceId })
-            });
-            const j = await r.json().catch(() => ({}));
-            if (!r.ok) throw new Error(j.error || 'Delete failed');
-            deleteConfirmModal.hide();
-            document.querySelectorAll('tr.rdb-row.table-active').forEach(r => r.classList.remove('table-active'));
-            selectedInstance = null;
-            openCreateBtn.innerHTML = '<i class="bi bi-plus-lg me-1"></i>Instance';
-            exitSelectMode();
-            clearState();
-            // loadTable()은 첫 줄에서 stopDeletePolling()을 호출하므로 여기서 함께 쓰면
-            // 삭제 폴링이 끊길 수 있다 — 목록 갱신은 삭제 폴링(즉시 1회 + 5초 주기)이 담당
-            startDeletePolling(inst.instanceId);
-        } catch (err) {
-            alert('Failed to delete instance: ' + err.message);
-        } finally {
-            btn.disabled = false;
-            btn.innerHTML = '<i class="bi bi-trash3 me-1"></i>Delete';
-        }
-    });
-
-    actionBtn.addEventListener('click', async () => {
-        if (phase === 1) await handleSave();
-        else await handleSubmit();
-    });
-
-    // ── Save ──────────────────────────────────────────────
-    async function handleSave() {
-        const provider         = getProvider();
-        const region           = getRegion();
-        const engine           = engineSelect.value;
-        const engineVersion    = engineVersionSelect.value;
-        const instanceId       = document.getElementById('gen-mysql-instanceId').value.trim();
-        const allocatedStorage = parseInt(document.getElementById('gen-mysql-allocatedStorage').value, 10);
-        const masterUsername   = document.getElementById('gen-mysql-username').value.trim();
-        const masterPassword   = document.getElementById('gen-mysql-password').value.trim();
-        const instanceClass    = icHidden.value;
-
-        actionBtn.disabled = true;
-        actionBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>&nbsp;Creating...';
-
-        try {
-            const res = await fetch('/db/rdbms', {
-                method: 'PUT', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ provider, region, instanceId, instanceClass, engine, engineVersion, masterUsername, masterPassword, allocatedStorage })
-            });
-            if (!res.ok) {
-                const err = await res.json().catch(() => ({}));
-                throw new Error(err.error || `HTTP ${res.status}`);
-            }
-            const instance = await res.json();
-            // 마스터 계정명을 생성 시점에 저장 — 이후 다른 인스턴스로 이동해도 유실되지 않음
-            // (기존엔 onInstanceReady에서 폼을 읽어 저장했으나, 그새 폼이 다른 인스턴스로 바뀌면 오염됨)
-            if (masterUsername) {
-                if (instanceId) localStorage.setItem('rdb-username-' + instanceId, masterUsername);
-                if (instance.instanceId && instance.instanceId !== instanceId) {
-                    localStorage.setItem('rdb-username-' + instance.instanceId, masterUsername);
-                }
-            }
-            // 생성 요청 접수 → offcanvas를 닫고 진행 상태는 테이블 Status + toolbar 배너로만 표시.
-            // 이미 완료된 경우(즉시 available)는 폴링 없이 목록 갱신만.
-            loadTable();
-            if (!isInstanceReady(instance)) startPolling(instance.instanceId);
-            saveState();
-            offcanvas.hide();
-            resetCreateForm();
-            applyProviderRules();
-        } catch (err) {
-            alert('Failed to create instance: ' + err.message);
-            actionBtn.disabled = false;
-            actionBtn.textContent = 'Create';
-        }
-    }
-
-    // ── Submit (phase 3: 선택한 인스턴스로 샘플데이터 생성) ──
-    async function handleSubmit() {
-        const credRaw     = document.getElementById('targetCredentialSelect').value;
-        const targetPoint = {
-            provider:        getProvider(),
-            region:          regionSelect.value,
-            // host/port는 선택한 인스턴스의 endpoint 사용 (section-connect 제거됨)
-            host:            (selectedInstance && selectedInstance.endpoint) || '',
-            port:            String((selectedInstance && selectedInstance.port) || ''),
-            username:        document.getElementById('gen-mysql-username').value.trim(),
-            password:        document.getElementById('gen-mysql-password').value.trim(),
-            instanceId:      document.getElementById('gen-mysql-instanceId').value.trim(),
-            allocatedStorage: document.getElementById('gen-mysql-allocatedStorage').value,
-            instanceClass:   icHidden.value,
-        };
-
-        loadingButtonOn();
-        resultCollpase();
-
-        try {
-            const res = await fetch('/generate/rdbms', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ targetPoint, dummy: targetPoint })
-            });
-            if (!res.ok) throw new Error('Network response was not ok');
-            const json = await res.json();
-            document.getElementById('resultText').value = json.Result;
-
-            resetAfterSubmit();
-            loadTable(); // 샘플데이터 생성 직후 목록 갱신 — 최신 상태를 즉시 반영
-            const bsOC = bootstrap.Offcanvas.getInstance(offcanvasEl);
-            if (bsOC) bsOC.hide();
-        } catch (err) {
-            alert(err.message || err);
-        } finally {
-            loadingButtonOff();
-            updateButton();
-        }
-    }
-
-    function resetAfterSubmit() {
-        document.querySelectorAll('tr.rdb-row.table-active').forEach(r => r.classList.remove('table-active'));
-        selectedInstance = null;
-        deleteInstanceBtn.disabled = true;
-        openCreateBtn.innerHTML = '<i class="bi bi-plus-lg me-1"></i>Instance';
-        document.getElementById('oc-title').innerHTML = '<i class="bi bi-plus-circle me-2 text-primary"></i>Instance';
-        document.getElementById('storage-group').classList.remove('d-none');
-        phase = 1;
-        clearState();
-        resetSelect(engineSelect, '-');
-        resetSelect(engineVersionSelect, '-');
-        icReset();
-        document.getElementById('gen-mysql-instanceId').value       = '';
-        clearInstanceIdInvalid();
-        document.getElementById('gen-mysql-allocatedStorage').value  = '20';
-        document.getElementById('gen-mysql-username').value          = '';
-        document.getElementById('gen-mysql-password').value          = '';
-        sectionDb.classList.add('d-none');
-    }
-
-    function setCreationFieldsDisabled(disabled) {
-        engineSelect.disabled         = disabled;
-        engineVersionSelect.disabled  = disabled;
-        icTrigger.style.pointerEvents = disabled ? 'none' : '';
-        icTrigger.style.cursor        = disabled ? 'default' : '';
-        icTrigger.style.backgroundColor = disabled ? '#E9ECEF' : '';
-        ['gen-mysql-instanceId', 'gen-mysql-allocatedStorage'].forEach(id => {
-            const el = document.getElementById(id);
-            el.readOnly = disabled;
-            el.classList.toggle('bg-light', disabled);
-        });
-    }
-
-    // ── 폴링 (생성 직후·복귀 시 미완료에만 동작; 진행 상태는 테이블 Status로만 표시) ─────────────
-    function startPolling(instanceId) {
-        stopDeletePolling();
-        if (pollTimerId) clearInterval(pollTimerId); // 연속 생성 시 이전 타이머 정리
-        pollingInstanceId = instanceId;
-        pollProvider      = getProvider();
-        pollRegion        = getRegion();
-        pollStartTime     = Date.now();
-        pollTimerId = setInterval(pollStatus, RDB_POLL_INTERVAL_MS);
-        document.addEventListener('visibilitychange', onVisibilityChange);
-        // 즉시 1회 조회 — alibaba 등은 생성 API 직후 목록 반영이 몇 초 지연되어
-        // 첫 loadTable에 새 인스턴스가 없을 수 있다. 첫 인터벌(5초)을 기다리지 않고 곧바로 반영한다.
-        setTimeout(pollStatus, 1000);
-    }
-
-    function stopPolling() {
-        if (pollTimerId) { clearInterval(pollTimerId); pollTimerId = null; }
-        document.removeEventListener('visibilitychange', onVisibilityChange);
-        pollingInstanceId = null;
-        pollProvider      = null;
-        pollRegion        = null;
-    }
-
-    function onVisibilityChange() {
-        if (document.visibilityState === 'visible' && pollingInstanceId) pollStatus();
-    }
-
-    async function pollStatus() {
-        if (!pollingInstanceId) return;
-        const timeoutMs = rdbCreateTimeoutMs();
-        if (Date.now() - pollStartTime > timeoutMs) {
-            stopPolling();
-            alert(`Instance creation did not complete within ${Math.round(timeoutMs / 60000)} minutes. Please check the status in the CSP console.`);
-            return;
-        }
-        try {
-            const pProv = pollProvider || getProvider();
-            const pReg  = pollRegion   || getRegion();
-            const res = await fetch('/db/rdbms', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ provider: pProv, region: pReg })
-            });
-            if (!res.ok) return;
-            const instances = await res.json();
-            // 현재 화면이 폴링 대상(provider+region)일 때만 테이블 갱신 → 다른 리전으로 이동했으면 화면을 건드리지 않는다.
-            if (pProv === getProvider() && pReg === getRegion()) renderTable(instances);
-            const found = Array.isArray(instances)
-                ? instances.find(i => i.instanceId === pollingInstanceId)
-                : null;
-            if (found && found.status === 'failed') {
-                stopPolling();
-                alert('Instance provisioning failed (e.g. the master username may be a reserved keyword on the CSP). ' +
-                    'Check the server logs for details, then delete the instance and retry with a different username.');
-                loadTable();
-                return;
-            }
-            if (found && isInstanceReady(found, pProv)) {
-                // 생성 완료 → 폴링 즉시 중지, 테이블에 최신 상태 반영
-                stopPolling();
-                // NCP: 공인 도메인이 아직 없으면 Public Domain 가이드를 즉시 자동 표시
-                if (pProv === 'ncp' && !isHostReady(found.endpoint, 'ncp')) {
-                    ncpGuideInstanceId = found.instanceId;
-                }
-                loadTable();
-                saveState(); // 추적 종료 저장 (복귀 시 불필요한 재조회 방지)
-            }
-        } catch (e) { console.error('pollStatus:', e); }
-    }
-
-    // ── 삭제 완료 폴링 ─────────────────────────────────────
-    function startDeletePolling(instanceId) {
-        deletePollInstanceId = instanceId;
-        if (deletePollTimerId) clearInterval(deletePollTimerId);
-        deletePollTimerId = setInterval(pollDeleteStatus, RDB_POLL_INTERVAL_MS);
-        // 삭제 직후 상태(deleting)를 기다림 없이 즉시 반영
-        setTimeout(pollDeleteStatus, 0);
-        saveState(); // 페이지 복귀 후에도 삭제 폴링을 이어가기 위해 보존
-    }
-
-    function stopDeletePolling() {
-        if (deletePollTimerId) { clearInterval(deletePollTimerId); deletePollTimerId = null; }
-        const wasPolling = !!deletePollInstanceId;
-        deletePollInstanceId = null;
-        if (wasPolling) saveState(); // 보존된 삭제 추적 정리
-    }
-
-    async function pollDeleteStatus() {
-        if (!deletePollInstanceId) return;
-        try {
-            const res = await fetch('/db/rdbms', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ provider: getProvider(), region: getRegion() })
-            });
-            if (!res.ok) return;
-            const instances = await res.json();
-            renderTable(instances);
-            const stillExists = Array.isArray(instances)
-                && instances.some(i => i.instanceId === deletePollInstanceId);
-            if (!stillExists) stopDeletePolling();
-        } catch (e) { console.error('pollDeleteStatus:', e); }
-    }
-
     // NCP: 콘솔에서 Public 도메인 활성화 후 Host 1회 재조회 → 최신 Host 반영 (폴링 아님)
-    // 대상: 선택된 인스턴스(phase 3) 또는 방금 생성 완료된 인스턴스(가이드 대상)
     document.getElementById('refresh-endpoint-btn').addEventListener('click', async function () {
-        const target = ncpGuideTarget();
-        const instanceId = (target && target.instanceId) || '';
-        if (!instanceId) return;
+        if (!selectedInstance) return;
         this.disabled = true;
         this.innerHTML = '<span class="spinner-border spinner-border-sm" role="status"></span>';
         try {
-            const res = await fetch('/db/rdbms', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ provider: getProvider(), region: getRegion() })
-            });
-            if (res.ok) {
-                const instances = await res.json();
-                renderTable(instances);
-                const found = Array.isArray(instances) ? instances.find(i => i.instanceId === instanceId) : null;
-                if (found && found.endpoint) {
-                    if (selectedInstance && selectedInstance.instanceId === instanceId) {
-                        selectedInstance.endpoint = found.endpoint;
-                        if (found.port) selectedInstance.port = found.port;
-                    }
-                    // 공인 도메인 반영 완료 → 가이드 종료 + Sample Data 허용
-                    if (isHostReady(found.endpoint, 'ncp')) ncpGuideInstanceId = null;
-                    updateButton();
-                }
-                updateNcpPublicUI();
-            }
-        } catch (e) { console.error('refreshEndpoint:', e); }
-        finally {
+            await loadTable(); // onData가 선택 인스턴스의 endpoint 반영 + 버튼/가이드 갱신
+        } finally {
             this.disabled = false;
             this.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i>Refresh Host';
         }
     });
 
-    // ── 2-panel IC dropdown ───────────────────────────────
-    function icOpenPanel()  { icPanel.classList.remove('d-none'); }
-    function icClosePanel() { icPanel.classList.add('d-none'); }
-
-    function icSelectFamily(family, familyEl) {
-        icFamilyList.querySelectorAll('.ic-family-item').forEach(el => el.classList.remove('active'));
-        familyEl.classList.add('active');
-        const sep = getProvider() === 'gcp' ? '-' : '.';
-        const sizes = instanceClassData.filter(c => c.startsWith(family + sep));
-        icSizeList.innerHTML = '';
-        sizes.forEach(s => {
-            const div = document.createElement('div');
-            div.className = 'ic-size-item px-3 py-2 small';
-            div.textContent = icSplit(s).size;
-            div.addEventListener('click', e => {
-                e.stopPropagation();
-                icHidden.value = s;
-                icTriggerText.textContent = s;
-                icTriggerText.classList.remove('text-muted');
-                icClosePanel();
-                sectionInstance.classList.remove('d-none');
-                updateButton();
-                saveState();
-            });
-            icSizeList.appendChild(div);
-        });
-    }
-
-    function icLoadFamilies(classes) {
-        instanceClassData = Array.isArray(classes) ? classes : [];
-        const families = [...new Set(instanceClassData.map(c => icSplit(c).family))];
-        icFamilyList.innerHTML = '';
-        icSizeList.innerHTML   = '';
-        families.forEach(f => {
-            const div = document.createElement('div');
-            div.className = 'ic-family-item px-3 py-2 small';
-            div.textContent = f;
-            div.addEventListener('click', e => { e.stopPropagation(); icSelectFamily(f, div); });
-            icFamilyList.appendChild(div);
-        });
-        icHidden.value = '';
-        icTriggerText.textContent = '-';
-        icTriggerText.classList.add('text-muted');
-        const firstEl = icFamilyList.querySelector('.ic-family-item');
-        if (firstEl) {
-            icSelectFamily(families[0], firstEl);
-            const firstSize = icSizeList.querySelector('.ic-size-item');
-            if (firstSize) firstSize.click();
-        }
-    }
-
-    function icReset() {
-        // 주의: 생성 폴링(stopPolling)은 여기서 건드리지 않는다.
-        // icReset은 Instance Class UI 리셋 전용 — 폴링 종료는 pollStatus(available/실패)/타임아웃에서만.
-        instanceClassData = [];
-        icHidden.value    = '';
-        icTriggerText.textContent = '-';
-        icTriggerText.classList.add('text-muted');
-        icClosePanel();
-        sectionInstance.classList.add('d-none');
-        setCreationFieldsDisabled(false);
-        phase = 1;
-        updateButton();
-    }
-
-    icTrigger.addEventListener('click', () => {
-        if (!instanceClassData.length) return;
-        if (icPanel.classList.contains('d-none')) icOpenPanel();
-        else icClosePanel();
-    });
-    icTrigger.addEventListener('keydown', e => {
-        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); icTrigger.click(); }
-        if (e.key === 'Escape') icClosePanel();
-    });
-    document.addEventListener('click', e => {
-        if (!icWrapper.contains(e.target)) icClosePanel();
+    // ── 검색 ─────────────────────────────────────────────
+    document.getElementById('instance-search').addEventListener('input', function () {
+        searchQuery = this.value;
+        currentPage = 1;
+        applyFilter();
     });
 
-    // ── engine / version ──────────────────────────────────
-    function populateEngines(data) {
-        engineVersionData = Array.isArray(data) ? data : [];
-        const engines = [...new Set(engineVersionData.map(d => d.engine))];
-        resetSelect(engineSelect, '-');
-        engines.forEach(engine => {
-            const opt = document.createElement('option');
-            opt.value = engine; opt.textContent = engine;
-            engineSelect.appendChild(opt);
-        });
-        resetSelect(engineVersionSelect, '-');
-        icReset();
-        sectionDb.classList.remove('d-none');
-        if (engineSelect.options.length > 1) {
-            engineSelect.selectedIndex = 1;
-            engineSelect.dispatchEvent(new Event('change'));
-        }
-    }
-
-    function populateVersions(selectedEngine) {
-        const versions = engineVersionData.filter(d => d.engine === selectedEngine).map(d => d.engineVersion);
-        resetSelect(engineVersionSelect, '-');
-        versions.forEach(v => {
-            const opt = document.createElement('option');
-            opt.value = v; opt.textContent = v;
-            engineVersionSelect.appendChild(opt);
-        });
-        icReset();
-    }
-
-    regionSelect.addEventListener('change', async function () {
-        const provider = getProvider();
-        const region   = getRegion(this.value);
-        document.querySelectorAll('.rdb-row-check').forEach(cb => cb.checked = false);
+    // ── credential / region 변경 ─────────────────────────
+    // scripts.js initProviderHandlers가 credential 변경 시 provider hidden을 동기 설정하므로
+    // setTimeout(0)으로 반영 이후에 조회한다
+    credSelect.addEventListener('change', () => {
         selectedInstance = null;
-        ncpGuideInstanceId = null; // 리전/컨텍스트 변경 → 이전 가이드 대상 해제
-        deleteInstanceBtn.disabled = true;
-        openCreateBtn.innerHTML = '<i class="bi bi-plus-lg me-1"></i>Instance';
-        resetSelect(engineSelect, '-');
-        resetSelect(engineVersionSelect, '-');
-        phase = 1;
-        icReset();
-        sectionDb.classList.add('d-none');
-        document.getElementById('gen-mysql-instanceId').value      = '';
-        clearInstanceIdInvalid();
-        document.getElementById('gen-mysql-allocatedStorage').value = '20';
-        document.getElementById('gen-mysql-username').value         = '';
-        document.getElementById('gen-mysql-password').value         = '';
-        applyProviderRules();
-        updateCreateBtn();
-        updateOcContext();
+        setTimeout(() => { loadTable(); saveState(); }, 0);
+    });
+    regionSelect.addEventListener('change', () => {
+        selectedInstance = null;
         loadTable();
         saveState();
-        if (!provider || provider === 'none' || !region || region === 'none') return;
+    });
+
+    // ── sessionStorage (credential/region 유지 — 새로고침/페이지 복귀 대응) ──
+    function saveState() {
         try {
-            const res = await fetch('/db/rdbms/engine-versions', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ provider, region })
-            });
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            populateEngines(await res.json());
-        } catch (e) { console.error('engine-versions:', e); }
-    });
+            sessionStorage.setItem(STATE_KEY, JSON.stringify({
+                credentialId: credSelect.value,
+                provider:     getProvider(),
+                region:       regionSelect.value,
+            }));
+        } catch (e) { console.warn('saveState:', e); }
+    }
 
-    engineSelect.addEventListener('change', function () {
-        if (this.value) populateVersions(this.value);
-    });
+    function restoreState() {
+        const raw = sessionStorage.getItem(STATE_KEY);
+        if (!raw) return;
+        let s;
+        try { s = JSON.parse(raw); } catch { return; }
 
-    engineVersionSelect.addEventListener('change', async function () {
-        const provider = getProvider(), region = getRegion();
-        const engine = engineSelect.value, engineVersion = this.value;
-        icReset();
-        if (!provider || provider === 'none' || !regionSelect.value || regionSelect.value === 'none' || !engine || !engineVersion) return;
-        sectionInstance.classList.remove('d-none');
-        applyProviderRules();
-        try {
-            const res = await fetch('/db/rdbms/instance-class', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ provider, region, engine, engineVersion })
-            });
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            icLoadFamilies(await res.json());
-        } catch (e) { console.error('instance-class:', e); }
-    });
-
-    document.getElementById('targetCredentialSelect').addEventListener('change', function () {
-        clearState();
-        resetSelect(engineSelect, '-');
-        resetSelect(engineVersionSelect, '-');
-        icReset();
-        sectionDb.classList.add('d-none');
-        updateOcContext();
-        // scripts.js가 동기적으로 provider/region을 설정한 뒤 테이블 조회
-        setTimeout(() => { updateCreateBtn(); updateOcContext(); loadTable(); applyProviderRules(); }, 0);
-    });
+        if (s.credentialId) {
+            credSelect.value = s.credentialId;
+            const opt  = credSelect.options[credSelect.selectedIndex];
+            const prov = opt?.dataset?.provider || s.provider || '';
+            if (prov && prov !== 'none') {
+                document.getElementById('targetPoint[provider]').value = prov;
+                document.querySelectorAll('#targetRegionSelect optgroup').forEach(og => {
+                    og.style.display = og.dataset.provider === prov ? '' : 'none';
+                });
+            }
+        }
+        if (!s.region || s.region === 'none') return;
+        regionSelect.value = s.region;
+        regionSelect.dispatchEvent(new Event('change'));
+    }
 
     // ── 초기화 ───────────────────────────────────────────
-    updateCreateBtn();
-    waitForCredentials().then(() => restoreState().catch(console.error));
+    instPanel.refreshButtons();
+    waitForCredentials(credSelect).then(restoreState);
 });
 </script>
 

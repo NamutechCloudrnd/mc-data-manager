@@ -10,20 +10,6 @@
 // for mc-data-manger
 window.addEventListener('DOMContentLoaded', event => {
 
-    // Toggle the side navigation
-    const sidebarToggle = document.body.querySelector('#sidebarToggle');
-    if (sidebarToggle) {
-        // Uncomment Below to persist sidebar toggle between refreshes
-        // if (localStorage.getItem('sb|sidebar-toggle') === 'true') {
-        //     document.body.classList.toggle('sb-sidenav-toggled');
-        // }
-        sidebarToggle.addEventListener('click', event => {
-            event.preventDefault();
-            document.body.classList.toggle('sb-sidenav-toggled');
-            localStorage.setItem('sb|sidebar-toggle', document.body.classList.contains('sb-sidenav-toggled'));
-        });
-    }
-
     if (document.getElementById('genForm')) {
         generateFormSubmit();
         loadProfileList();
@@ -92,7 +78,40 @@ const TaskProgress = (() => {
             .catch(() => clear());
     }
 
-    return { newOpId, save, clear, resume };
+    function setResult(text) {
+        resultCollpase();
+        const rt = document.getElementById('resultText');
+        if (rt) rt.value = text;
+    }
+
+    // migrate/backup/restore가 쓰는 표준 복원 UI — 셋 다 동작이 같아 여기에 둔다.
+    // 진행 중이면 스피너 + 안내, 끝났으면 결과 문구를 Result 패널에 넣는다.
+    function attach(kind) {
+        resume(kind,
+            () => { loadingButtonOn(); setResult('In progress.. (refresh to update the status)'); },
+            text => { setResult(text); loadingButtonOff(); });
+    }
+
+    // 표준 제출 — opId를 심어 저장한 뒤 POST한다.
+    // 작업이 수십 분 걸릴 수 있어 요청이 커넥션 타임아웃으로 끊길 수 있다. 그 경우
+    // catch에서 저장을 지우지 않고 남겨, 새로고침 시 attach(kind)가 상태를 복원한다.
+    function submit(kind, url, jsonData) {
+        const opId = newOpId(kind);
+        jsonData.operationId = opId;
+        save(kind, opId);
+
+        return fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(jsonData),
+        })
+            .then(response => response.json().catch(() => ({})))
+            .then(json => { setResult((json && json.Result) || ''); clear(); })
+            .catch(reason => { console.error(kind + ' request dropped:', reason); })
+            .finally(() => { loadingButtonOff(); });
+    }
+
+    return { newOpId, save, clear, resume, attach, submit };
 })();
 
 // Result 패널을 항상 "펼침"으로 (toggle이 아니라 show — 이미 펼쳐져 있으면 유지).
@@ -147,21 +166,7 @@ function getInputValue(id) {
     return value !== "" ? value : null;
 }
 
-const ALIBABA_ENDPOINTS = Object.freeze({
-    "oss-cn-hangzhou": "https://oss-cn-hangzhou.aliyuncs.com",
-    "oss-cn-beijing": "https://oss-cn-beijing.aliyuncs.com",
-    "oss-cn-shanghai": "https://oss-cn-shanghai.aliyuncs.com",
-    "oss-cn-shenzhen": "https://oss-cn-shenzhen.aliyuncs.com",
-    "oss-ap-northeast-1": "https://oss-ap-northeast-1.aliyuncs.com",
-    "oss-ap-southeast-1": "https://oss-ap-southeast-1.aliyuncs.com",
-    "oss-ap-southeast-2": "https://oss-ap-southeast-2.aliyuncs.com",
-    "oss-ap-southeast-3": "https://oss-ap-southeast-3.aliyuncs.com",
-    "oss-ap-south-1": "https://oss-ap-south-1.aliyuncs.com",
-    "oss-eu-central-1": "https://oss-eu-central-1.aliyuncs.com",
-    "oss-eu-west-1": "https://oss-eu-west-1.aliyuncs.com",
-    "oss-us-east-1": "https://oss-us-east-1.aliyuncs.com",
-    "oss-us-west-1": "https://oss-us-west-1.aliyuncs.com",
-});
+const NCP_OBJECTSTORAGE_ENDPOINT = "https://kr.object.ncloudstorage.com";
 
 function resolveAlibabaEndpoint(region) {
     if (!region) {
@@ -169,6 +174,18 @@ function resolveAlibabaEndpoint(region) {
     }
     const normalized = region.trim().toLowerCase();
     return `https://oss-${normalized}.aliyuncs.com`;
+}
+
+// ncp/alibaba는 endpoint가 필수인데 폼에 비어 있을 수 있어 provider 규칙으로 채운다.
+// 그 외 provider는 endpoint 개념이 없다 → 호출부에서 제거한다.
+// point: { provider, region, endpoint } 를 제자리에서 수정한다.
+function ensureEndpoint(point) {
+    if (!point || point.endpoint) return;
+    if (point.provider === "ncp") {
+        point.endpoint = NCP_OBJECTSTORAGE_ENDPOINT;
+    } else if (point.provider === "alibaba") {
+        point.endpoint = resolveAlibabaEndpoint(point.region);
+    }
 }
 
 // 버킷 리전 후보들을 Region 셀렉트 옵션과 대소문자 무시로 매칭해 실제 옵션 값을 돌려준다.
@@ -212,7 +229,6 @@ function generateFormSubmit() {
         requestBody.targetPoint = {
             ...jsonData
         };
-        console.log(JSON.stringify(jsonData))
 
         requestBody.targetPoint.provider = document.getElementById('targetPoint[provider]')?.value;
         
@@ -236,11 +252,8 @@ function generateFormSubmit() {
             delete requestBody["targetPoint[endpoint]"];
         }
         
-        if (requestBody.targetPoint.provider === "ncp" && !requestBody.targetPoint.endpoint) {
-            requestBody.targetPoint.endpoint = "https://kr.object.ncloudstorage.com"
-        } else if (requestBody.targetPoint.provider === "alibaba" && !requestBody.targetPoint.endpoint) {
-            requestBody.targetPoint.endpoint = resolveAlibabaEndpoint(requestBody.targetPoint.region)
-        } else if (!["ncp", "alibaba"].includes(requestBody.targetPoint.provider)) {
+        ensureEndpoint(requestBody.targetPoint);
+        if (!["ncp", "alibaba"].includes(requestBody.targetPoint.provider)) {
             delete requestBody.targetPoint.endpoint
         }
 
@@ -266,10 +279,7 @@ function generateFormSubmit() {
                 return response.json();
             })
             .then(json => {
-                const resultText = document.getElementById('resultText');
-                resultText.value = json.Result;
-                console.log(json);
-                console.log("Generate done.");
+                document.getElementById('resultText').value = json.Result;
             })
             .catch(reason => {
                 console.error("Error during generate:", reason);
@@ -278,8 +288,6 @@ function generateFormSubmit() {
             .finally(() => {
                 loadingButtonOff();
             });
-
-        console.log("Generate progressing...");
     });
 }
 
@@ -484,17 +492,6 @@ function credentialFormSubmit() {
                 }
             };
         }
-        // jsonData = convertCheckboxParams(jsonData)
-        // jsonData.targetPoint = {
-        //     ...jsonData
-        // };
-        console.log('credentialFormSubmit jsonData: ', jsonData)
-        // jsonData.targetPoint.provider = document.getElementById('provider').value;
-        // const target = document.getElementById('genTarget').value;
-        // jsonData.dummy = jsonData.targetPoint
-        // if ((jsonData.targetPoint.provider == "ncp") && (jsonData.targetPoint.endpoint == "")) {
-        //     jsonData.targetPoint.endpoint = "https://kr.object.ncloudstorage.com"
-        // }
         const url = "/credentials";
 
         let req;
@@ -509,29 +506,21 @@ function credentialFormSubmit() {
 
         fetch(url, req)
             .then(response => {
-                console.log(response);
-                
                 if (!response.ok) {
                     throw new Error('Network response was not ok');
                 }
                 return response.json();
             })
             .then(json => {
-                const resultText = document.getElementById('resultText');
-                // resultText.value = json.Result;
-                resultText.value = json && 'Success';
-                console.log(json);
-                console.log("Generate done.");
+                document.getElementById('resultText').value = json && 'Success';
             })
             .catch(reason => {
-                console.error("Error during generate:", reason);
+                console.error("Error during credential submit:", reason);
                 alert(reason.message || reason);
             })
             .finally(() => {
                 loadingButtonOff();
             });
-
-        console.log("Generate progressing...");
     });
 }
 
@@ -543,9 +532,7 @@ function setFilterAccordion() {
 
 function setPicker() {
     $( function() {
-        // $("#datepicker1").datepicker();
-        // $("#datepicker2").datepicker();
-        $("#datepicker1").datetimepicker({ 
+        $("#datepicker1").datetimepicker({
             format: "Y-m-d H:i:s",
             step: 1,
         });
@@ -580,18 +567,7 @@ function applyDbProviderExclusion(selectEl, isDbService) {
 }
 
 function loadProfileList() {
-    let url = "/credentials";
-    let req;
-
-        req = {
-            method: 'GET',
-            // headers: {
-            //     'Content-Type': 'application/json'
-            // },
-            // body: JSON.stringify(jsonData)
-        };
-
-        fetch(url, req)
+        fetch("/credentials")
             .then(response => {
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
                 return response.json();
@@ -619,46 +595,23 @@ function loadProfileList() {
                     }
                 });
 
-                const sourceSelectElement = document.getElementById("sourceCredentialSelect");
-
-                if (sourceSelectElement) {
-                    // placeholder 역할 옵션 추가
-                    // const placeholder = document.createElement("option");
-                    // placeholder.textContent = "Select Credential";
-                    // placeholder.disabled = true;
-                    // placeholder.selected = true;
-                    // awsSelect.appendChild(placeholder);
-
+                // source/target 중 페이지에 있는 것만 채운다 (generate/backup은 한쪽만 있음).
+                // credential이 1개뿐이면 자동 선택 + change를 쏴서 region/목록 로드를 태운다.
+                ["sourceCredentialSelect", "targetCredentialSelect"].forEach(id => {
+                    const selectEl = document.getElementById(id);
+                    if (!selectEl) return;
                     options.forEach(optionData => {
                         const option = document.createElement("option");
                         option.value = optionData.value;
                         option.textContent = optionData.label;
                         option.setAttribute("data-provider", optionData.provider);
-                        sourceSelectElement.appendChild(option);
+                        selectEl.appendChild(option);
                     });
                     if (options.length === 1) {
-                        sourceSelectElement.selectedIndex = 1;
-                        sourceSelectElement.dispatchEvent(new Event('change'));
+                        selectEl.selectedIndex = 1;
+                        selectEl.dispatchEvent(new Event('change'));
                     }
-                }
-
-                const targetSelectElement = document.getElementById("targetCredentialSelect");
-
-                if (targetSelectElement) {
-                    options.forEach(optionData => {
-                        const option = document.createElement("option");
-                        option.value = optionData.value;
-                        option.textContent = optionData.label;
-                        option.setAttribute("data-provider", optionData.provider);
-                        targetSelectElement.appendChild(option);
-                    });
-                    if (options.length === 1) {
-                        targetSelectElement.selectedIndex = 1;
-                        targetSelectElement.dispatchEvent(new Event('change'));
-                    }
-                }
-
-                // console.log('options: ', options);
+                });
 
                 const capSelect = document.getElementById("mig-filter-sizeFilteringUnit");
 
@@ -678,13 +631,6 @@ function loadProfileList() {
                 ]
 
                 if (capSelect) {
-                    // placeholder 역할 옵션 추가
-                    // const placeholder = document.createElement("option");
-                    // placeholder.textContent = "Select Unit";
-                    // placeholder.disabled = true;
-                    // placeholder.selected = true;
-                    // capSelect.appendChild(placeholder);
-
                     capOptions.forEach(optionData => {
                         const option = document.createElement("option");
                         option.value = optionData.value;
@@ -692,19 +638,9 @@ function loadProfileList() {
                         capSelect.appendChild(option);
                     });
                 }
-                
-
-                // window.mcmpData = {                    
-                //     profileList: json,
-                //     profileOptions: options
-                // };                
-
-                // console.log('window mcmpData: ', window.mcmpData);
-                
-                // console.log("migration done.");
             })
             .catch(reason => {
-                console.log(reason);
+                console.error('loadProfileList:', reason);
                 alert(reason);
             });
 }
@@ -752,45 +688,13 @@ function migrationFormSubmit() {
 
         let url = "/migrate/" + service;
 
-        const ensureEndpoint = (point) => {
-            if (!point) return;
-            if (point.provider == "ncp" && !point.endpoint) {
-                point.endpoint = "https://kr.object.ncloudstorage.com";
-            } else if (point.provider == "alibaba" && !point.endpoint) {
-                point.endpoint = resolveAlibabaEndpoint(point.region);
-            }
-        };
         ensureEndpoint(jsonData.targetPoint);
         ensureEndpoint(jsonData.sourcePoint);
 
-        // 마이그레이션은 수십 분 걸릴 수 있어 단일 요청 응답만 기다리면 커넥션 타임아웃 시
-        // 스피너가 무한정 돌고 결과를 못 받는다. 백엔드는 요청 시작 시 이 operationId를 TaskID로
-        // task를 등록하고 완료 시 상태를 갱신하므로, GET /migrate/:id 로 상태를 폴링해 완료를 감지한다.
-        // 복귀 복원용 opId 저장 (폴링 없음).
-        const opId = TaskProgress.newOpId('migrate');
-        jsonData.operationId = opId;
-        TaskProgress.save('migrate', opId);
-
-        const req = {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(jsonData)
-        };
-
-        fetch(url, req)
-            .then(response => response.json().catch(() => ({})))
-            .then(json => {
-                document.getElementById('resultText').value = (json && json.Result) || '';
-                TaskProgress.clear();
-            })
-            .catch(reason => { console.log('migration request dropped:', reason); }) // 저장 보존 → 새로고침 시 복원
-            .finally(() => { loadingButtonOff(); });
+        TaskProgress.submit('migrate', url, jsonData);
     });
 
-    // 복귀 시 1회 조회로 복원
-    TaskProgress.resume('migrate',
-        () => { loadingButtonOn(); resultCollpase(); document.getElementById('resultText').value = 'In progress.. (refresh to update the status)'; },
-        (text) => { resultCollpase(); document.getElementById('resultText').value = text; loadingButtonOff(); });
+    TaskProgress.attach('migrate');   // 복귀 시 1회 조회로 복원
 }
 
 function applyFilter(jsonData) {
@@ -835,92 +739,11 @@ function applyFilter(jsonData) {
         jsonData.sourceFilter.exact = null;
     }
 
-    console.log(
-        "minSize type:", typeof jsonData.sourceFilter.minSize, 
-        "value:", jsonData.sourceFilter.minSize
-    );
-    console.log(
-        "maxSize type:", typeof jsonData.sourceFilter.maxSize, 
-        "value:", jsonData.sourceFilter.maxSize
-    );
-
-    console.log(
-        "contains type:", typeof jsonData.sourceFilter.contains, 
-        "value:", jsonData.sourceFilter.contains
-    );
 }
 
 function backUpFormSubmit() {
-    const form = document.getElementById('backForm');
-
-    form.addEventListener('submit', (e) => {
-        e.preventDefault();
-
-        const payload = new FormData(form);
-        let jsonData = formDataToObject(payload)
-
-        const provider = document.getElementById('sourcePoint[provider]').value;
-        const service = document.getElementById('srcService').value;
-        if(service != "rdbms" && jsonData.sourcePoint.credentialId == "none") {
-            alert("credential not selected");
-            return
-        }
-        if(service == "objectstorage" && (jsonData.sourcePoint.bucket == "none" || jsonData.sourcePoint.bucket == "-" || jsonData.sourcePoint.bucket == "")) {
-            alert("please select bucket");
-            return
-        }        
-        if(service == "objectstorage") {
-            applyFilter(jsonData)
-        } else {
-            delete jsonData.sourceFilter;
-        }
-        // console.log(provider)
-
-        loadingButtonOn();
-        resultCollpase();
-
-        let url = "/backup/" + service;
-        console.log(url);
-
-        jsonData.sourcePoint.credentialId = parseInt(jsonData.sourcePoint.credentialId);
-        jsonData.sourcePoint.provider = provider
-        // console.log(jsonData)
-
-        if (service == "objectstorage") {
-            if (provider == "ncp" && !jsonData.sourcePoint.endpoint) {
-                jsonData.sourcePoint.endpoint = "https://kr.object.ncloudstorage.com"
-            } else if (provider == "alibaba" && !jsonData.sourcePoint.endpoint) {
-                jsonData.sourcePoint.endpoint = resolveAlibabaEndpoint(jsonData.sourcePoint.region)
-            }
-        }
-
-        // 복귀 복원용 opId 저장 (폴링 없음).
-        const opId = TaskProgress.newOpId('backup');
-        jsonData.operationId = opId;
-        TaskProgress.save('backup', opId);
-
-        let req = {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(jsonData)
-        };
-
-        fetch(url, req)
-            .then(response => response.json().catch(() => ({})))
-            .then(json => {
-                document.getElementById('resultText').value = (json && json.Result) || '';
-                TaskProgress.clear();
-            })
-            .catch(reason => { console.log('backup request dropped:', reason); })
-            .finally(() => { loadingButtonOff(); });
-    });
-
-    // 복귀 시 1회 조회로 복원
-    TaskProgress.resume('backup',
-        () => { loadingButtonOn(); resultCollpase(); document.getElementById('resultText').value = 'In progress.. (refresh to update the status)'; },
-        (text) => { resultCollpase(); document.getElementById('resultText').value = text; loadingButtonOff(); });
+    // 백업 생성 submit은 back-backup.html 인라인(BackupList 모듈)이 직접 처리한다
+    // (스펙 형태 POST /backup/{service} + 결과를 Result 패널에 표시).
 }
 
 function RestoreFormSubmit() {
@@ -947,191 +770,71 @@ function RestoreFormSubmit() {
         resultCollpase();
 
         let url = "/restore/" + service;
-        console.log(url);
-        console.log(jsonData)
 
         jsonData.targetPoint.credentialId = parseInt(jsonData.targetPoint.credentialId);
         jsonData.targetPoint.provider = provider       
 
         if(service == "objectstorage") {
-            if (provider == "ncp" && !jsonData.targetPoint.endpoint) {
-                jsonData.targetPoint.endpoint = "https://kr.object.ncloudstorage.com"
-            } else if (provider == "alibaba" && !jsonData.targetPoint.endpoint) {
-                jsonData.targetPoint.endpoint = resolveAlibabaEndpoint(jsonData.targetPoint.region)
-            }
+            ensureEndpoint(jsonData.targetPoint);
         }
 
-        // 복귀 복원용 opId 저장 (폴링 없음).
-        const opId = TaskProgress.newOpId('restore');
-        jsonData.operationId = opId;
-        TaskProgress.save('restore', opId);
-
-        let req = {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(jsonData)
-        };
-
-        fetch(url, req)
-            .then(response => response.json().catch(() => ({})))
-            .then(json => {
-                document.getElementById('resultText').value = (json && json.Result) || '';
-                TaskProgress.clear();
-            })
-            .catch(reason => { console.log('restore request dropped:', reason); })
-            .finally(() => { loadingButtonOff(); });
+        TaskProgress.submit('restore', url, jsonData);
     });
 
-    // 복귀 시 1회 조회로 복원
-    TaskProgress.resume('restore',
-        () => { loadingButtonOn(); resultCollpase(); document.getElementById('resultText').value = 'In progress.. (refresh to update the status)'; },
-        (text) => { resultCollpase(); document.getElementById('resultText').value = text; loadingButtonOff(); });
+    TaskProgress.attach('restore');   // 복귀 시 1회 조회로 복원
 }
 
-document.addEventListener('DOMContentLoaded', function () {
-    const clearServiceLink = document.getElementById('clearServiceLink');
-
-    if (clearServiceLink) {
-        clearServiceLink.addEventListener('click', function (event) {
+// 헤더 드롭다운의 서비스 생성/삭제 — confirm → 요청 → 결과 alert.
+// clearServiceLink('/service/clearAll')는 header.html에서 링크가 주석 처리돼
+// 도달 불가능하므로 핸들러를 두지 않는다. 링크를 되살리면 아래 배열에 추가할 것.
+document.addEventListener('DOMContentLoaded', () => {
+    [
+        {
+            id: 'genServiceLink', url: '/service/apply', method: 'POST',
+            confirm: 'Are you sure you want to create a data-related service?',
+            ok: 'Service creation request has been submitted.',
+            fail: 'An error occurred while submitting the service creation request.',
+        },
+        {
+            id: 'delServiceLink', url: '/service/destroy', method: 'DELETE',
+            confirm: 'Are you sure you want to remove the data-related service?',
+            ok: 'Service removal request has been submitted.',
+            fail: 'An error occurred while submitting the service removal request.',
+        },
+    ].forEach(cfg => {
+        const link = document.getElementById(cfg.id);
+        if (!link) return;
+        link.addEventListener('click', async event => {
             event.preventDefault();
-
-            const userConfirmed = confirm('Are you sure you want to clear all services?');
-            if (!userConfirmed) {
-                return;
-            }
-
-            fetch('/service/clearAll', {
-                method: 'DELETE',
-                headers: {
-                    'Content-Type': 'application/json'
-                }
-            })
-                .then(response => {
-                    if (response.ok) {
-                        alert('The service has been successfully cleared.');
-                    } else {
-                        return response.json().then(data => {
-                            throw new Error(data.message || 'An error occurred while clearing the service.');
-                        });
-                    }
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    alert(`Error: ${error.message}`);
+            if (!confirm(cfg.confirm)) return;
+            try {
+                const res = await fetch(cfg.url, {
+                    method: cfg.method,
+                    headers: { 'Content-Type': 'application/json' },
                 });
+                if (!res.ok) {
+                    const data = await res.json().catch(() => ({}));
+                    throw new Error(data.message || cfg.fail);
+                }
+                alert(cfg.ok);
+            } catch (error) {
+                console.error(cfg.id + ':', error);
+                alert(`Error: ${error.message}`);
+            }
         });
-    } 
+    });
 });
 
-document.addEventListener('DOMContentLoaded', function () {
-    const genServiceLink = document.getElementById('genServiceLink');
-
-    if (genServiceLink) {
-        genServiceLink.addEventListener('click', function (event) {
-            event.preventDefault();
-
-            const userConfirmed = confirm('Are you sure you want to create a data-related service?');
-            if (!userConfirmed) {
-                return;
-            }
-
-            fetch('/service/apply', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                }
-            })
-                .then(response => {
-                    if (response.ok) {
-                        alert('Service creation request has been submitted.');
-                    } else {
-                        return response.json().then(data => {
-                            throw new Error(data.message || 'An error occurred while submitting the service creation request.');
-                        });
-                    }
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    alert(`Error: ${error.message}`);
-                });
-        });
-    } else {
-        console.error('Gen Service link not found.');
-    }
-});
-
-
-document.addEventListener('DOMContentLoaded', function () {
-    const delServiceLink = document.getElementById('delServiceLink');
-
-    if (delServiceLink) {
-        delServiceLink.addEventListener('click', function (event) {
-            event.preventDefault();
-
-            const userConfirmed = confirm('Are you sure you want to remove the data-related service?');
-            if (!userConfirmed) {
-                return;
-            }
-
-            fetch('/service/destroy', {
-                method: 'DELETE',
-                headers: {
-                    'Content-Type': 'application/json'
-                }
-            })
-                .then(response => {
-                    if (response.ok) {
-                        alert('Service removal request has been submitted.');
-                    } else {
-                        return response.json().then(data => {
-                            throw new Error(data.message || 'An error occurred while submitting the service removal request.');
-                        });
-                    }
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    alert(`Error: ${error.message}`);
-                });
-        });
-    } else {
-        console.error('Del Service link not found.');
-    }
-});
-
-// for m-cmp/mc-web-console
-
-// message  Info
-// {
-//     accessToken: "accesstokenExample",
-//     workspaceInfo: {
-//         "id": "8b2df1f9-b937-4861-b5ce-855a41c346bc",
-//         "name": "workspace2",
-//         "description": "workspace2 desc",
-//         "created_at": "2024-06-18T00:10:16.192337Z",
-//         "updated_at": "2024-06-18T00:10:16.192337Z"
-//     },
-//     projectInfo: {
-//         "id": "1e88f4ea-d052-4314-80a4-9ac3f6691feb",
-//         "ns_id": "project1",
-//         "name": "project1",
-//         "description": "project1 desc",
-//         "created_at": "2024-06-18T00:28:57.094105Z",
-//         "updated_at": "2024-06-18T00:28:57.094105Z"
-//     },
-//     operationId: "abc"
-// };
-
+// m-cmp/mc-web-console이 iframe으로 감쌀 때 postMessage로 보내는 payload를 받는다.
+// 페이로드에는 accessToken/workspaceInfo/projectInfo/operationId가 들어오지만
+// 이 앱이 쓰는 건 projectInfo.ns_id 하나뿐이다 (→ 서버의 런타임 namespace로 세팅).
 window.addEventListener("message", async function (event) {
     const data = event.data;
-    console.log("iframeServer : Message received :", data);
     try {
         const nsId = data?.projectInfo?.ns_id;
         if (!nsId) return;
 
         sessionStorage.setItem("nsId", nsId);
-        console.log("iframeServer : nsId set :", nsId);
 
         await fetch("/namespace", {
             method: "POST",
@@ -1245,13 +948,6 @@ document.addEventListener("DOMContentLoaded", () => {
     ["source", "target"].forEach(initProviderHandlers);
 });
 
-function ucFirst(str) {
-    if (!str) {
-      return "";
-    }
-    return str.charAt(0).toUpperCase() + str.slice(1);
-}
-
 function getServiceName(service, provider) {
     if (provider === "none") return "-";
   
@@ -1284,6 +980,125 @@ function getServiceName(service, provider) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 목록 행 선택 체크박스(.row-select) 전역 동기화
+//
+// 모든 Bucket/Instance 목록의 선택 상태는 tr의 'table-active' 클래스로 표현된다.
+// 체크박스는 pointer-events:none(styles.css)이라 클릭이 행으로 통과해 기존
+// 행 클릭 핸들러가 선택을 처리하고, 여기서 클래스 변경을 관찰해 checked만 맞춘다.
+// → 페이지별 동기화 코드 없이 단일 선택/자동 해제/재렌더가 항상 일치.
+// ─────────────────────────────────────────────────────────────────────────────
+new MutationObserver(muts => {
+    muts.forEach(m => {
+        if (m.target.tagName !== 'TR') return;
+        const cb = m.target.querySelector('.row-select');
+        if (cb) cb.checked = m.target.classList.contains('table-active');
+    });
+}).observe(document.body, { subtree: true, attributes: true, attributeFilter: ['class'] });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 공용 유틸 — 페이지별 중복 구현 금지
+//
+// 페이지 인라인 스크립트는 DOMContentLoaded 안에서 실행되므로(footer.html이
+// scripts.js를 로드한 뒤 fire) 여기 정의된 전역을 안전하게 참조할 수 있다.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// HTML 이스케이프. 속성값에 넣는 경우가 있어 큰따옴표까지 치환한다.
+window.escHtml = function (s) {
+    return String(s == null ? '—' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+};
+
+// DB 인스턴스(rdbms/nrdbms) 상태 뱃지.
+// 버킷 상태는 의미가 달라(생성 중 개념 없음) BucketPanel 내부본을 쓴다.
+window.instanceStatusBadge = function (status) {
+    const s = (status || '').toLowerCase();
+    if (s === 'available') {
+        return `<span class="text-success small"><i class="bi bi-check-circle-fill me-1"></i>available</span>`;
+    }
+    // 삭제 진행/완료: 둘 다 빨간색(text-danger)으로 통일. deleting=진행 스피너, deleted=휴지통 아이콘.
+    if (s === 'deleting') {
+        return `<span class="text-danger small"><span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>deleting</span>`;
+    }
+    if (s === 'deleted') {
+        return `<span class="text-danger small"><i class="bi bi-trash3-fill me-1"></i>deleted</span>`;
+    }
+    if (s === 'failed') {
+        return `<span class="text-danger small"><i class="bi bi-x-circle-fill me-1"></i>failed</span>`;
+    }
+    // alibaba SQL 전용 종단 상태: 인스턴스는 살아있고 마스터 유저만 실패.
+    // 배지 자체가 재등록 진입점 — 클릭은 InstancePanel의 capture 리스너가 받는다.
+    if (s === 'masteruser_failed') {
+        return `<span class="text-warning small dbi-mu-retry" role="button" tabindex="0"
+            style="cursor:pointer; text-decoration:underline dotted;"
+            title="Master user creation failed. Click to re-register the master user."><i class="bi bi-exclamation-triangle-fill me-1"></i>master user failed</span>`;
+    }
+    // 그 외 상태(net_creating 등)는 API가 반환한 값을 그대로 표시한다
+    return `<span class="text-primary small"><i class="bi bi-hourglass-split ic-spin me-1"></i>${window.escHtml(s || '-')}</span>`;
+};
+
+// credential select가 채워질 때까지 대기한다.
+// loadCredentialList()가 비동기로 option을 채우므로, 저장된 상태 복원 전에 기다려야 한다.
+// 3초 내에 안 채워지면 그냥 진행한다(무한 대기 방지).
+window.waitForCredentials = function (selectEl) {
+    return new Promise(resolve => {
+        if (!selectEl || selectEl.options.length > 1) { resolve(); return; }
+        const obs = new MutationObserver(() => {
+            if (selectEl.options.length > 1) { obs.disconnect(); resolve(); }
+        });
+        obs.observe(selectEl, { childList: true });
+        setTimeout(() => { obs.disconnect(); resolve(); }, 3000);
+    });
+};
+
+// 행 선택 시 Region 셀렉트를 인스턴스 region과 대소문자 무시로 동기화 (auto-select).
+// rows에서 instanceId로 인스턴스를 찾아 그 region과 일치하는 option을 고른다.
+//
+// ⚠️ change 이벤트를 dispatch하지 않는다 — dispatch하면 목록이 리로드되어
+//    방금 한 행 선택이 풀린다. 이 제약을 깨지 말 것.
+window.autoSelectRegion = function (rows, instanceId, regionSel) {
+    const inst = (rows || []).find(i => i.instanceId === instanceId);
+    if (!inst || !inst.region || !regionSel) return;
+    const opt = [...regionSel.options].find(o => (o.value || '').toLowerCase() === String(inst.region).toLowerCase());
+    if (opt && regionSel.value !== opt.value) regionSel.value = opt.value;
+};
+
+// 페이지네이션 렌더 공용. container에 <nav>를 그리고 클릭 시 onPage(p)를 호출한다.
+//
+// ⚠️ totalPages는 '페이지 수'다 — 아이템 수를 넘기지 말 것.
+//    아이템 수밖에 없으면 호출부에서 Math.ceil(items / PAGE_SIZE) || 1 로 변환한다.
+// 페이지가 7개를 넘으면 생략부호(…)로 접고 이전/다음(‹ ›)을 붙인다.
+window.renderPagination = function (container, totalPages, current, onPage) {
+    if (!container) return;
+    if (totalPages <= 1) { container.innerHTML = ''; return; }
+    const range = [];
+    if (totalPages <= 7) {
+        for (let p = 1; p <= totalPages; p++) range.push(p);
+    } else {
+        range.push(1);
+        if (current > 3) range.push('...');
+        const s = Math.max(2, current - 1), e = Math.min(totalPages - 1, current + 1);
+        for (let p = s; p <= e; p++) range.push(p);
+        if (current < totalPages - 2) range.push('...');
+        range.push(totalPages);
+    }
+    const prev = `<li class="page-item ${current === 1 ? 'disabled' : ''}"><a class="page-link" href="#" data-page="${current - 1}">‹</a></li>`;
+    const next = `<li class="page-item ${current === totalPages ? 'disabled' : ''}"><a class="page-link" href="#" data-page="${current + 1}">›</a></li>`;
+    const pages = range.map(p =>
+        p === '...'
+            ? `<li class="page-item disabled"><span class="page-link">…</span></li>`
+            : `<li class="page-item ${p === current ? 'active' : ''}"><a class="page-link" href="#" data-page="${p}">${p}</a></li>`
+    ).join('');
+    container.innerHTML = `<nav><ul class="pagination pagination-sm mb-0 justify-content-center">${prev}${pages}${next}</ul></nav>`;
+    container.querySelectorAll('a.page-link').forEach(link => {
+        link.addEventListener('click', e => {
+            e.preventDefault();
+            const p = parseInt(link.dataset.page);
+            if (!isNaN(p) && p >= 1 && p <= totalPages && p !== current) onPage(p);
+        });
+    });
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // BucketPanel — Object Storage 버킷 목록/탐색 공용 컴포넌트
 //
 // gen-object-storage.html의 버킷 테이블 + 가상 폴더 탐색 + 삭제 기능을
@@ -1310,10 +1125,7 @@ const BucketPanel = (() => {
     const PAGE_SIZE = 10;
 
     // ── 공용 헬퍼 ────────────────────────────────────────
-    function esc(s) {
-        return String(s == null ? '—' : s)
-            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-    }
+    const esc = window.escHtml;
     function fmtSize(bytes) {
         const n = Number(bytes);
         if (!isFinite(n) || n < 0) return '—';
@@ -1337,42 +1149,12 @@ const BucketPanel = (() => {
         if (!s) return `<span class="text-muted small">—</span>`;
         return `<span class="text-secondary small">${esc(status)}</span>`;
     }
-    function renderPagination(container, totalPages, current, onPage) {
-        if (totalPages <= 1) { container.innerHTML = ''; return; }
-        const range = [];
-        if (totalPages <= 7) {
-            for (let p = 1; p <= totalPages; p++) range.push(p);
-        } else {
-            range.push(1);
-            if (current > 3) range.push('...');
-            const s = Math.max(2, current - 1), e = Math.min(totalPages - 1, current + 1);
-            for (let p = s; p <= e; p++) range.push(p);
-            if (current < totalPages - 2) range.push('...');
-            range.push(totalPages);
-        }
-        const prev = `<li class="page-item ${current === 1 ? 'disabled' : ''}"><a class="page-link" href="#" data-page="${current - 1}">‹</a></li>`;
-        const next = `<li class="page-item ${current === totalPages ? 'disabled' : ''}"><a class="page-link" href="#" data-page="${current + 1}">›</a></li>`;
-        const pages = range.map(p =>
-            p === '...'
-                ? `<li class="page-item disabled"><span class="page-link">…</span></li>`
-                : `<li class="page-item ${p === current ? 'active' : ''}"><a class="page-link" href="#" data-page="${p}">${p}</a></li>`
-        ).join('');
-        container.innerHTML = `<nav><ul class="pagination pagination-sm mb-0 justify-content-center">${prev}${pages}${next}</ul></nav>`;
-        container.querySelectorAll('a.page-link').forEach(link => {
-            link.addEventListener('click', e => {
-                e.preventDefault();
-                const p = parseInt(link.dataset.page);
-                if (!isNaN(p) && p >= 1 && p <= totalPages && p !== current) onPage(p);
-            });
-        });
-    }
-
     // ── 패널별 targetPoint 구성 (provider별 endpoint 규칙 포함) ──
     function buildTp(panel, extra) {
         const provider = panel.provider.value || '';
         const tp = Object.assign({ provider, region: panel.region.value }, extra || {});
         if (provider === 'ncp') {
-            tp.endpoint = tp.endpoint || panel.endpoint?.value || 'https://kr.object.ncloudstorage.com';
+            tp.endpoint = tp.endpoint || panel.endpoint?.value || NCP_OBJECTSTORAGE_ENDPOINT;
         } else if (provider === 'alibaba') {
             tp.endpoint = tp.endpoint || panel.endpoint?.value || resolveAlibabaEndpoint(tp.region);
         }
@@ -1413,30 +1195,28 @@ const BucketPanel = (() => {
             pagination: document.getElementById('bkt-object-pagination'),
             deleteModal: new bootstrap.Modal(document.getElementById('bktDeleteModal')),
             objDeleteModal: new bootstrap.Modal(document.getElementById('bktObjectDeleteModal')),
-            // 생성 모달은 구버전 파셜(모달 없음)과의 호환을 위해 존재할 때만 배선
-            createModal: document.getElementById('bktCreateModal')
-                ? new bootstrap.Modal(document.getElementById('bktCreateModal')) : null,
+            // 생성/탐색 2모드 (gen-object-storage와 동일 구조)
+            context: document.getElementById('bkt-oc-context'),
+            sectionCreate: document.getElementById('bkt-section-create'),
+            sectionObjects: document.getElementById('bkt-section-objects'),
+            createInput: document.getElementById('bkt-create-input'),
+            createConfirm: document.getElementById('bkt-create-confirm'),
         };
-        if (ocRefs.createModal) {
-            document.getElementById('bktCreateModal').addEventListener('show.bs.modal', () => {
-                document.getElementById('bkt-create-input').value = '';
-                document.getElementById('bkt-create-input').classList.remove('is-invalid');
-                document.getElementById('bkt-create-error').classList.add('d-none');
-                document.getElementById('bkt-create-confirm').disabled = true;
-            });
-            document.getElementById('bkt-create-input').addEventListener('input', function () {
+        if (ocRefs.sectionCreate) {
+            ocRefs.createInput.addEventListener('input', function () {
                 const name = this.value.trim();
                 let msg = bucketNameError(name);
                 if (!msg && name && createTarget?.panel.allBuckets.some(b => b.name === name)) {
                     msg = 'This bucket name already exists.';
                 }
                 this.classList.toggle('is-invalid', !!msg);
+                this.closest('.form-floating')?.classList.toggle('is-invalid', !!msg);
                 const errEl = document.getElementById('bkt-create-error');
                 errEl.textContent = msg;
                 errEl.classList.toggle('d-none', !msg);
-                document.getElementById('bkt-create-confirm').disabled = !name || !!msg;
+                ocRefs.createConfirm.disabled = !name || !!msg;
             });
-            document.getElementById('bkt-create-confirm').addEventListener('click', createBucket);
+            ocRefs.createConfirm.addEventListener('click', createBucket);
         }
         document.getElementById('bkt-object-refresh').addEventListener('click', loadObjects);
         document.getElementById('bktDeleteModal').addEventListener('show.bs.modal', () => {
@@ -1463,21 +1243,37 @@ const BucketPanel = (() => {
         return '';
     }
 
-    function openCreateModal(panel) {
-        const r = ocInit();
-        if (!r || !r.createModal) return;
-        createTarget = { panel };
+    // 패널의 credential/region으로 offcanvas 컨텍스트 문구 갱신
+    function updateOcContext(panel) {
         const credText = panel.cred?.options?.[panel.cred.selectedIndex]?.textContent?.trim() || panel.provider.value || '—';
-        document.getElementById('bkt-create-context').textContent = credText;
-        r.createModal.show();
+        const region = panel.region?.value;
+        ocRefs.context.textContent = (region && region !== 'none') ? `${credText} / ${region}` : credText;
+    }
+
+    // 생성 모드로 offcanvas 열기 (gen-object-storage enterCreateMode와 동일 UX)
+    function enterCreateMode(panel) {
+        const r = ocInit();
+        if (!r || !r.sectionCreate) return;
+        createTarget = { panel };
+        r.title.innerHTML = '<i class="bi bi-plus-circle me-2 text-primary"></i>Create Bucket';
+        r.sectionCreate.classList.remove('d-none');
+        r.sectionObjects.classList.add('d-none');
+        r.createConfirm.classList.remove('d-none');
+        r.createInput.value = '';
+        r.createInput.classList.remove('is-invalid');
+        r.createInput.closest('.form-floating')?.classList.remove('is-invalid');
+        document.getElementById('bkt-create-error').classList.add('d-none');
+        r.createConfirm.disabled = true;
+        updateOcContext(panel);
+        r.oc.show();
     }
 
     async function createBucket() {
         if (!createTarget) return;
         const panel = createTarget.panel;
-        const name = document.getElementById('bkt-create-input').value.trim();
+        const name = ocRefs.createInput.value.trim();
         if (!name || bucketNameError(name)) return;
-        const btn = document.getElementById('bkt-create-confirm');
+        const btn = ocRefs.createConfirm;
         btn.disabled = true;
         btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Creating...';
         try {
@@ -1490,7 +1286,7 @@ const BucketPanel = (() => {
             if ((json.Result || '').includes('already exists')) {
                 alert(`Bucket '${name}' already exists.`);
             }
-            ocRefs.createModal.hide();
+            ocRefs.oc.hide();
             // 방금 만든 버킷을 바로 선택 상태로 (gen-object-storage와 동일 UX)
             // select 페이지는 목록 갱신으로 옵션이 생긴 뒤에 값을 넣어야 반영된다
             await panel.load();
@@ -1522,6 +1318,12 @@ const BucketPanel = (() => {
         browse = { panel, name, region: region || panel.region.value };
         currentPrefix = '';
         r.title.innerHTML = `<i class="bi bi-bucket me-2 text-primary"></i>${esc(name)}`;
+        if (r.sectionCreate) {
+            r.sectionCreate.classList.add('d-none');
+            r.sectionObjects.classList.remove('d-none');
+            r.createConfirm.classList.add('d-none');
+            updateOcContext(panel);
+        }
         r.oc.show();
         loadObjects();
     }
@@ -1725,9 +1527,13 @@ const BucketPanel = (() => {
             load, clear,
         };
 
-        // 선택 상태에 따라 툴바 Delete 버튼 활성화
+        // 선택 상태에 따라 툴바 Delete 버튼 활성화 (생성 중 버킷은 삭제 불가)
         function updateDeleteBtn() {
-            if (panel.deleteBtn) panel.deleteBtn.disabled = !(panel.bucketInput?.value || '').trim();
+            if (!panel.deleteBtn) return;
+            const name = (panel.bucketInput?.value || '').trim();
+            const b = name ? panel.allBuckets.find(x => x.name === name) : null;
+            const isCreating = !!b && (b.status || '').toLowerCase().includes('creating');
+            panel.deleteBtn.disabled = !name || isCreating;
         }
 
         function syncHighlight() {
@@ -1753,7 +1559,7 @@ const BucketPanel = (() => {
             if (panel.page > totalPages) panel.page = totalPages;
 
             if (!filtered.length) {
-                panel.tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted small py-3">No buckets found</td></tr>';
+                panel.tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted small py-3">No buckets found</td></tr>';
             } else {
                 const provider = panel.provider.value || '';
                 const selected = (panel.bucketInput?.value || '').trim();
@@ -1767,6 +1573,7 @@ const BucketPanel = (() => {
                     const isSel = selected === b.name;
                     return `<tr class="bkt-row${isSel ? ' table-active' : ''}" style="cursor:pointer;"
                             data-name="${esc(b.name)}" data-region="${esc(region)}" data-conn-region="${esc(connRegion)}">
+                        <td class="text-center align-middle"><input type="checkbox" class="form-check-input row-select"${isSel ? ' checked' : ''}></td>
                         <td class="small text-truncate" style="max-width:180px;" title="${esc(b.cspResourceId || '')}">${esc(b.cspResourceId || '-')}</td>
                         <td class="small">${esc(b.name)}</td>
                         <td class="small">${esc(regionName)}</td>
@@ -1818,11 +1625,11 @@ const BucketPanel = (() => {
             if (!provider || provider === 'none') {
                 panel.allBuckets = [];
                 populateBucketSelect();
-                panel.tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted small py-3">Select a credential to list buckets</td></tr>';
+                panel.tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted small py-3">Select a credential to list buckets</td></tr>';
                 panel.pagination.innerHTML = '';
                 return;
             }
-            panel.tbody.innerHTML = '<tr><td colspan="6" class="text-center py-3"><span class="spinner-border spinner-border-sm text-muted"></span></td></tr>';
+            panel.tbody.innerHTML = '<tr><td colspan="7" class="text-center py-3"><span class="spinner-border spinner-border-sm text-muted"></span></td></tr>';
             try {
                 const res = await fetch(`/objectstorage/buckets?filterKey=providerName&filterVal=${encodeURIComponent(provider)}`, {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -1835,9 +1642,10 @@ const BucketPanel = (() => {
                 panel.page = 1;
                 populateBucketSelect();
                 render();
+                updateDeleteBtn(); // 재조회로 상태가 바뀐 선택 버킷(creating→available)의 Delete 재평가
             } catch (e) {
                 console.error('BucketPanel.load:', e);
-                panel.tbody.innerHTML = '<tr><td colspan="6" class="text-center text-danger small py-3">Failed to load bucket list</td></tr>';
+                panel.tbody.innerHTML = '<tr><td colspan="7" class="text-center text-danger small py-3">Failed to load bucket list</td></tr>';
                 panel.pagination.innerHTML = '';
             }
         }
@@ -1894,7 +1702,7 @@ const BucketPanel = (() => {
                 const p = panel.provider.value || '';
                 panel.createBtn.disabled = !p || p === 'none';
             };
-            panel.createBtn.addEventListener('click', () => openCreateModal(panel));
+            panel.createBtn.addEventListener('click', () => enterCreateMode(panel));
             panel.provider.addEventListener('change', updateCreateBtn);
             updateCreateBtn();
         }
@@ -1909,15 +1717,15 @@ const BucketPanel = (() => {
 })();
 
 // ─────────────────────────────────────────────────────────────────────────────
-// DBInstancePanel — DB 인스턴스 생성/삭제 공용 컴포넌트 (SQL·NoSQL)
+// InstancePanel — DB 인스턴스 생성/삭제 공용 컴포넌트 (SQL·NoSQL)
 //
 // gen-mysql/gen-no-sql의 생성·삭제 기능을 migration/backup/restore 페이지에서
 // 재사용하기 위한 모듈. 목록 조회/렌더는 각 페이지의 기존 구현을 그대로 두고,
 // 이 모듈은 생성 Offcanvas + 삭제 모달 + 완료 폴링만 담당한다.
 //
 // 사용법:
-//   페이지에 {{ template "db-instance-panel.html" . }} 를 한 번 include 하고:
-//   const panel = DBInstancePanel.init({
+//   페이지에 {{ template "instance-panel.html" . }} 를 한 번 include 하고:
+//   const panel = InstancePanel.init({
 //     kind: 'rdbms' | 'nrdbms',            // API: /db/{kind}
 //     getProvider: () => str, getRegion: () => str,
 //     getCredLabel: () => str,             // offcanvas 컨텍스트 표기용 (옵션)
@@ -1927,8 +1735,14 @@ const BucketPanel = (() => {
 //   });
 //   행 선택이 바뀔 때 panel.refreshButtons() 를 호출한다.
 // ─────────────────────────────────────────────────────────────────────────────
-const DBInstancePanel = (() => {
+const InstancePanel = (() => {
     const POLL_MS = 5000;
+
+    // 생성 직후 첫 조회를 늦출 provider (ms). alibaba는 결과적 일관성 때문에
+    // CreateInstance 응답 직후 DescribeDBInstances가 새 인스턴스를 아직 반환하지 않는다
+    // → 첫 틱이 즉시 돌면 "생성했는데 목록 그대로"로 보인다. 첫 틱만 늦추고 이후는 POLL_MS 그대로.
+    // 값은 실측이 아닌 추정치 — 체감이 맞지 않으면 이 숫자만 조정한다.
+    const CREATE_SETTLE_MS = { alibaba: 5000 };
 
     // ── provider별 계정/비밀번호 규칙 (gen-mysql/gen-no-sql과 동일 기준) ──
     // Alibaba: 클라이언트에서는 admin/root/user/test만 금지 (gen-mysql과 동일) —
@@ -1998,6 +1812,7 @@ const DBInstancePanel = (() => {
     let refs = null;
     let active = null;      // 오프캔버스를 연 패널
     let deleteCtx = null;   // { panel, instanceId, name }
+    let retryCtx = null;    // 유저 재등록 모드 대상 인스턴스 (null이면 일반 생성 모드)
     let engineVersionData = [];
     let icClasses = [];     // 현재 Instance Class 목록 (2패널 드롭다운)
     let pollTimer = null;
@@ -2005,7 +1820,7 @@ const DBInstancePanel = (() => {
     function uiInit() {
         if (refs) return refs;
         const oc = document.getElementById('dbiOffcanvas');
-        if (!oc) { console.warn('DBInstancePanel: db-instance-panel.html 파셜이 include되지 않았습니다'); return null; }
+        if (!oc) { console.warn('InstancePanel: instance-panel.html 파셜이 include되지 않았습니다'); return null; }
         refs = {
             oc: new bootstrap.Offcanvas(oc, { backdrop: true, scroll: false }),
             deleteModal: new bootstrap.Modal(document.getElementById('dbiDeleteModal')),
@@ -2037,11 +1852,22 @@ const DBInstancePanel = (() => {
         document.addEventListener('click', e => {
             if (!refs.icWrapper.contains(e.target)) icClose();
         });
-        // 중복 Instance ID: is-invalid + invalid-feedback로 표시 (storage와 동일 패턴)
+        // Instance ID 검증: 중복 + provider별 형식(NCP 8자). invalid/valid 피드백 표시.
         refs.instanceId.addEventListener('input', () => {
+            const v = refs.instanceId.value.trim();
+            const fmtErr = active ? instanceIdError(active.getProvider(), v) : '';
             const dup = instanceIdDup();
-            refs.instanceId.classList.toggle('is-invalid', dup);
-            refs.instanceId.closest('.form-floating').classList.toggle('is-invalid', dup);
+            const errMsg = dup ? 'This instance ID already exists.' : fmtErr;
+            const bad = !!errMsg;
+            const errEl = document.getElementById('dbi-instanceId-error');
+            if (errEl && errMsg) errEl.textContent = errMsg;
+            const fl = refs.instanceId.closest('.form-floating');
+            refs.instanceId.classList.toggle('is-invalid', bad);
+            fl.classList.toggle('is-invalid', bad);
+            // 8자 이상일 때만 valid(초록) 처리. valid-feedback 문구는 없음('Looks good' 미표시)
+            const valid = !bad && v.length >= 8;
+            refs.instanceId.classList.toggle('is-valid', valid);
+            fl.classList.toggle('is-valid', valid);
             updateCreateBtn();
         });
         // gen-mysql/gen-no-sql과 동일: is-invalid + invalid-feedback로 표시
@@ -2091,20 +1917,82 @@ const DBInstancePanel = (() => {
         sel.appendChild(opt);
     }
 
+    // ── 유저 재등록 모드 전환 (신규 DOM 없이 기존 필드 상태만 토글) ──
+    // 스펙 필드는 표시용으로만 채우고 잠근다 — 전송 페이로드에는 들어가지 않는다.
+    function applyRetryMode(r, inst) {
+        document.getElementById('dbi-oc-title').innerHTML =
+            '<i class="bi bi-person-exclamation me-2 text-warning"></i>Re-register Master User';
+        const banner = document.getElementById('dbi-context').closest('.alert');
+        banner.classList.remove('alert-secondary');
+        banner.classList.add('alert-warning');
+        document.getElementById('dbi-context').textContent =
+            `Master user creation failed. Re-enter credentials for ${inst.instanceId}.`;
+
+        // select는 option 1개만 주입 (loadEngineVersions를 호출하지 않으므로 비동기 덮어쓰기 없음)
+        const fill = (sel, val) => {
+            sel.replaceChildren();
+            const opt = document.createElement('option');
+            opt.value = val || ''; opt.textContent = val || '-';
+            sel.appendChild(opt);
+            sel.value = val || '';
+            sel.disabled = true;
+        };
+        fill(r.engine, inst.engine);
+        fill(r.version, inst.engineVersion);
+
+        // Instance Class는 커스텀 위젯 — disabled가 안 먹으므로 포인터 이벤트를 죽인다
+        r.icTriggerText.textContent = inst.instanceClass || '-';
+        r.icTriggerText.classList.remove('text-muted');
+        r.klass.value = inst.instanceClass || '';
+        r.icPanel.classList.add('d-none');
+        r.icTrigger.classList.add('pe-none', 'opacity-75');
+        r.icTrigger.setAttribute('tabindex', '-1');
+
+        r.instanceId.value = inst.instanceId || '';
+        r.instanceId.disabled = true;
+
+        // Storage는 목록 API 응답(models.DBInstance)에 없다 — 값을 채우면 실제 용량과 무관한
+        // 최소값(20GB)을 진짜처럼 보여주게 되므로, 표시하지 않는다.
+        // openCreate가 일반 모드 진입 때마다 이 토글을 다시 계산하므로 원복은 불필요하다.
+        document.getElementById('dbi-storage-group').classList.add('d-none');
+
+        // 재등록 대상은 자격증명뿐 — 비우고 활성 상태 유지
+        r.username.value = '';
+        r.password.value = '';
+        r.username.disabled = false;
+        r.password.disabled = false;
+    }
+
+    // 일반 생성 모드로 원복. openCreate가 매번 먼저 호출한다.
+    function resetRetryMode(r) {
+        document.getElementById('dbi-oc-title').innerHTML =
+            '<i class="bi bi-plus-circle me-2 text-primary"></i>Create Instance';
+        const banner = document.getElementById('dbi-context').closest('.alert');
+        banner.classList.remove('alert-warning');
+        banner.classList.add('alert-secondary');
+        r.engine.disabled = false;
+        r.version.disabled = false;
+        r.instanceId.disabled = false;
+        r.icTrigger.classList.remove('pe-none', 'opacity-75');
+        r.icTrigger.setAttribute('tabindex', '0');
+    }
+
     // ── 생성 폼 ───────────────────────────────────────────
-    function openCreate(panel) {
+    function openCreate(panel, retryInst) {
         const r = uiInit();
         if (!r) return;
         active = panel;
+        retryCtx = retryInst || null;
         engineVersionData = [];
         const provider = panel.getProvider();
+        resetRetryMode(r); // 이전 재등록 모드 잔재 원복 — 분기 전에 항상 실행
         document.getElementById('dbi-context').textContent =
             (panel.getCredLabel && panel.getCredLabel()) || `${provider} / ${panel.getRegion()}`;
         // 폼 초기화 + provider별 규칙
         resetSelect(r.engine); resetSelect(r.version); icReset();
         r.instanceId.value = '';
-        r.instanceId.classList.remove('is-invalid');
-        r.instanceId.closest('.form-floating').classList.remove('is-invalid');
+        r.instanceId.classList.remove('is-invalid', 'is-valid');
+        r.instanceId.closest('.form-floating').classList.remove('is-invalid', 'is-valid');
         r.username.value = '';
         r.password.value = '';
         ['dbi-username-error', 'dbi-password-error'].forEach(id => {
@@ -2135,9 +2023,11 @@ const DBInstancePanel = (() => {
         const unGrp = document.getElementById('dbi-username-group');
         unGrp.classList.toggle('mb-1', !!help);
         unGrp.classList.toggle('mb-3', !help);
+        if (retryCtx) applyRetryMode(r, retryCtx);
         updateCreateBtn();
         r.oc.show();
-        if (!simple) loadEngineVersions();
+        // 재등록 모드는 스펙을 잠그므로 목록을 다시 불러오지 않는다 (비동기 덮어쓰기 방지)
+        if (!simple && !retryCtx) loadEngineVersions();
     }
 
     // NoSQL aws/gcp: 프로비저닝 스펙 없이 Instance ID만으로 생성 (백엔드도 instanceId만 필수)
@@ -2150,6 +2040,17 @@ const DBInstancePanel = (() => {
         const v = refs.instanceId.value.trim();
         if (!v || !active?.getRows) return false;
         return (active.getRows() || []).some(i => i.instanceId === v || i.name === v);
+    }
+
+    // provider별 Instance ID 형식 검증 (오류 메시지 반환, 없으면 '').
+    // NCP: 서버가 생성 시 '-{랜덤6자}' 접미사를 붙이고 CSP 이름 상한이 15자라, 이름은 8자 이하만 허용.
+    function instanceIdError(provider, value) {
+        const v = (value || '').trim();
+        if (!v) return '';
+        if ((provider || '').toLowerCase() === 'ncp' && v.length > 8) {
+            return 'For NCP, use 8 characters or fewer (a unique suffix is added on creation).';
+        }
+        return '';
     }
 
     async function loadEngineVersions() {
@@ -2183,7 +2084,7 @@ const DBInstancePanel = (() => {
                     loadClasses();
                 }
             }
-        } catch (e) { console.error('DBInstancePanel.engineVersions:', e); }
+        } catch (e) { console.error('InstancePanel.engineVersions:', e); }
     }
 
     function populateVersions() {
@@ -2215,7 +2116,7 @@ const DBInstancePanel = (() => {
             });
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             icLoadFamilies(await res.json() || []);
-        } catch (e) { console.error('DBInstancePanel.instanceClass:', e); }
+        } catch (e) { console.error('InstancePanel.instanceClass:', e); }
     }
 
     // ── Instance Class 2패널 드롭다운 (gen-mysql/gen-no-sql과 동일 UX) ──
@@ -2279,6 +2180,14 @@ const DBInstancePanel = (() => {
     function updateCreateBtn() {
         if (!active || !refs) return;
         const provider = active.getProvider();
+        // 유저 재등록: 자격증명만 전송하므로 자격증명만 검증한다
+        if (retryCtx) {
+            const un = refs.username.value.trim();
+            const pw = refs.password.value;
+            refs.createBtn.disabled = !(un && !usernameError(active.kind, provider, un)
+                && pw && !passwordError(provider, pw));
+            return;
+        }
         // NoSQL aws/gcp: Instance ID만으로 생성 가능
         if (isSimpleCreate(active, (provider || '').toLowerCase())) {
             refs.createBtn.disabled = !refs.instanceId.value.trim() || instanceIdDup();
@@ -2291,6 +2200,7 @@ const DBInstancePanel = (() => {
         const pw = refs.password.value;
         const ok = refs.instanceId.value.trim()
             && !instanceIdDup()
+            && !instanceIdError(provider, refs.instanceId.value)
             && refs.version.value
             && refs.klass.value
             && storageOk
@@ -2301,6 +2211,7 @@ const DBInstancePanel = (() => {
 
     async function createInstance() {
         if (!active) return;
+        if (retryCtx) { await retryMasterUser(); return; }
         const panel = active;
         const body = {
             provider: panel.getProvider(),
@@ -2324,12 +2235,45 @@ const DBInstancePanel = (() => {
             const json = await res.json().catch(() => ({}));
             if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
             refs.oc.hide();
-            startPoll(panel, 'create', json.instanceId || body.instanceId);
+            const settle = CREATE_SETTLE_MS[(panel.getProvider() || '').toLowerCase()] || 0;
+            startPoll(panel, 'create', json.instanceId || body.instanceId, settle);
         } catch (err) {
             alert('Failed to create instance: ' + err.message);
         } finally {
             btn.disabled = false;
             btn.textContent = 'Create';
+        }
+    }
+
+    // 유저 재등록: 인스턴스는 변경하지 않고 계정만 생성한다.
+    // 성공 시 즉시 컨텍스트를 비워 중복 전송을 막는다.
+    async function retryMasterUser() {
+        const panel = active;
+        const inst = retryCtx;
+        const btn = refs.createBtn;
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>&nbsp;Creating...';
+        try {
+            const res = await fetch('/db/rdbms/account', {
+                method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    provider: panel.getProvider(),
+                    region: panel.getRegion(),
+                    instanceId: inst.instanceId,
+                    masterUsername: refs.username.value.trim(),
+                    masterPassword: refs.password.value,
+                })
+            });
+            const json = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+            retryCtx = null;
+            refs.oc.hide();
+            startPoll(panel, 'create', inst.instanceId);
+        } catch (err) {
+            alert('Failed to re-register the master user: ' + err.message);
+        } finally {
+            btn.textContent = 'Create';
+            updateCreateBtn(); // 성공/실패 모두 현재 모드 기준으로 버튼 상태 재평가
         }
     }
 
@@ -2340,9 +2284,8 @@ const DBInstancePanel = (() => {
         const inst = panel.getSelected && panel.getSelected();
         if (!inst) return;
         deleteCtx = { panel, instanceId: inst.instanceId, name: inst.name || inst.instanceId };
-        document.getElementById('dbi-delete-name').textContent = inst.instanceId;
-        document.getElementById('dbi-delete-instruction').textContent =
-            'To delete this instance, enter its Name: ' + deleteCtx.name;
+        // Object Storage(버킷) 삭제 팝업과 동일 규칙: ID가 아니라 Name을 표시하고 Name으로 검증한다
+        document.getElementById('dbi-delete-name').textContent = deleteCtx.name;
         r.deleteModal.show();
     }
 
@@ -2370,7 +2313,8 @@ const DBInstancePanel = (() => {
     }
 
     // ── 완료 폴링: 목록을 재조회해 onData로 넘기고, 전이가 끝나면 중단 ──
-    function startPoll(panel, mode, instanceId) {
+    // initialDelayMs: 첫 틱만 지연시킨다 (0/생략이면 기존대로 즉시 실행)
+    function startPoll(panel, mode, instanceId, initialDelayMs) {
         stopPoll();
         const provider = panel.getProvider(), region = panel.getRegion();
         let ticks = 0;
@@ -2387,20 +2331,39 @@ const DBInstancePanel = (() => {
                 if (res.ok) {
                     const instances = await res.json() || [];
                     panel.onData(instances);
+                    panel.refreshButtons(); // 상태 전이(creating→available 등)에 따라 Delete 버튼 재평가
                     const found = Array.isArray(instances) ? instances.find(i => i.instanceId === instanceId) : null;
                     const done = mode === 'delete'
                         ? !found
-                        : (found && ['available', 'failed'].includes((found.status || '').toLowerCase()));
+                        : (found && ['available', 'failed', 'masteruser_failed'].includes((found.status || '').toLowerCase()));
                     if (done) { stopPoll(); return; }
                 }
-            } catch (e) { console.error('DBInstancePanel.poll:', e); }
+            } catch (e) { console.error('InstancePanel.poll:', e); }
             pollTimer = setTimeout(tick, POLL_MS);
         }
-        tick();
+        if (initialDelayMs > 0) pollTimer = setTimeout(tick, initialDelayMs);
+        else tick();
     }
     function stopPoll() {
         if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
     }
+
+    // ── 배지 클릭 → 유저 재등록 진입 ─────────────────────
+    const panels = []; // init된 패널들 (배지 클릭 시 소속 패널 역추적용)
+
+    // capture 단계 필수: 행 클릭 리스너가 <tr>에 있어 버블 단계에선 이미 늦다.
+    document.addEventListener('click', e => {
+        const badge = e.target.closest('.dbi-mu-retry');
+        if (!badge) return;
+        e.stopPropagation(); // 행 선택 토글과 분리
+        const instanceId = badge.closest('tr')?.dataset.instanceId;
+        if (!instanceId) return;
+        const panel = panels.find(p =>
+            p.getRows && (p.getRows() || []).some(i => i.instanceId === instanceId));
+        if (!panel) return;
+        const inst = (panel.getRows() || []).find(i => i.instanceId === instanceId);
+        if (inst) openCreate(panel, inst);
+    }, true);
 
     // ── init ─────────────────────────────────────────────
     function init(cfg) {
@@ -2423,15 +2386,28 @@ const DBInstancePanel = (() => {
             getProvider: cfg.getProvider, getRegion: cfg.getRegion,
             getCredLabel: cfg.getCredLabel, getSelected: cfg.getSelected,
         } : null;
+        // 선택된 인스턴스의 목록 행 (status는 getRows에만 있다 — getSelected에는 없음)
+        const rowOf = sel => (sel && cfg.getRows)
+            ? (cfg.getRows() || []).find(i => i.instanceId === sel.instanceId) : null;
         // 버튼 전환은 '선택된 인스턴스'가 있을 때만 (NoSQL AWS는 목록이 없어 전용 버튼으로 진입)
-        const sampleEligible = () => !!sampleCfg
-            && !!(cfg.getSelected && cfg.getSelected())
-            && SamplePanel.canOpen(sampleCfg);
+        const sampleEligible = () => {
+            if (!sampleCfg) return false;
+            const sel = cfg.getSelected && cfg.getSelected();
+            if (!sel) return false;
+            // masteruser_failed는 엔드포인트가 살아있어 canOpen을 통과한다 — 여기서 막지 않으면
+            // 존재하지 않는 계정으로 접속해 Access Denied가 난다.
+            if ((rowOf(sel)?.status || '').toLowerCase() === 'masteruser_failed') return false;
+            return SamplePanel.canOpen(sampleCfg);
+        };
         panel.refreshButtons = () => {
             const p = panel.getProvider(), r = panel.getRegion();
             const ctxOk = p && p !== 'none' && r && r !== 'none';
             if (panel.createBtn) panel.createBtn.disabled = !ctxOk;
-            if (panel.deleteBtn) panel.deleteBtn.disabled = !(ctxOk && panel.getSelected && panel.getSelected());
+            // 생성 중(creating/net_creating 등) 인스턴스는 삭제 불가 — available 전이 후 재활성
+            const sel = panel.getSelected && panel.getSelected();
+            const row = rowOf(sel);
+            const isCreating = !!row && (row.status || '').toLowerCase().includes('creating');
+            if (panel.deleteBtn) panel.deleteBtn.disabled = !(ctxOk && sel) || isCreating;
             if (panel.createBtn && sampleCfg) {
                 const s = sampleEligible();
                 panel.createBtn.innerHTML = '<i class="bi bi-plus-lg me-1"></i>' + (s ? 'Sample Data' : 'Instance');
@@ -2445,6 +2421,7 @@ const DBInstancePanel = (() => {
         });
         if (sampleCfg && cfg.sample.awsBtn) cfg.sample.awsBtn.addEventListener('click', () => SamplePanel.open(sampleCfg));
         if (panel.deleteBtn) panel.deleteBtn.addEventListener('click', () => openDelete(panel));
+        panels.push(panel);
         panel.refreshButtons();
         return panel;
     }
@@ -2458,12 +2435,12 @@ const DBInstancePanel = (() => {
 //
 // gen-mysql/gen-no-sql의 Sample Data 생성 기능(제출 API·provider별 필드·검증)을
 // migration/backup/restore 페이지에서 재사용하기 위한 모듈.
-// DBInstancePanel과 연동해 Generate 페이지와 동일한 UX를 제공한다:
+// InstancePanel과 연동해 Generate 페이지와 동일한 UX를 제공한다:
 // 인스턴스 선택 시 '+ Instance' 버튼이 '+ Sample Data'로 전환되어 이 패널을 연다.
 //
-// 사용법 1 (권장 — DBInstancePanel 연동):
-//   DBInstancePanel.init({ kind, ..., sample: {} })                 // SQL
-//   DBInstancePanel.init({ kind, ..., sample: { awsBtn: el } })     // NoSQL (AWS 서버리스 진입 버튼)
+// 사용법 1 (권장 — InstancePanel 연동):
+//   InstancePanel.init({ kind, ..., sample: {} })                 // SQL
+//   InstancePanel.init({ kind, ..., sample: { awsBtn: el } })     // NoSQL (AWS 서버리스 진입 버튼)
 // 사용법 2 (독립 버튼):
 //   SamplePanel.attach({ openBtn, kind, getProvider, getRegion, getCredLabel?, getSelected })
 //
@@ -2520,11 +2497,9 @@ const SamplePanel = (() => {
             oc: bootstrap.Offcanvas.getOrCreateInstance(oc),
             context:       document.getElementById('nsp-context'),
             gcpGroup:      document.getElementById('nsp-gcp-group'),
-            awsGroup:      document.getElementById('nsp-aws-group'),
             accountFields: document.getElementById('nsp-account-fields'),
             dbGroup:       document.getElementById('nsp-db-group'),
             databaseId:    document.getElementById('nsp-databaseId'),
-            instanceId:    document.getElementById('nsp-instanceId'),
             username:      document.getElementById('nsp-username'),
             usernameHelp:  document.getElementById('nsp-username-help'),
             usernameErr:   document.getElementById('nsp-username-error'),
@@ -2540,7 +2515,6 @@ const SamplePanel = (() => {
         });
         refs.password.addEventListener('input', updateSubmit);
         refs.database.addEventListener('input', updateSubmit);
-        refs.instanceId.addEventListener('input', updateSubmit);
         refs.submitBtn.addEventListener('click', submit);
         return refs;
     }
@@ -2571,12 +2545,10 @@ const SamplePanel = (() => {
         refs.context.textContent = sel ? `${cred} / ${sel.name || sel.instanceId}` : cred;
         // kind/provider별 필드 토글
         refs.gcpGroup.classList.toggle('d-none', !(kind === 'nrdbms' && p === 'gcp'));
-        refs.awsGroup.classList.toggle('d-none', !(kind === 'nrdbms' && p === 'aws'));
         refs.accountFields.classList.toggle('d-none', !needsAccount());
         refs.dbGroup.classList.toggle('d-none', !isMongo());
         // 입력 초기화 (열 때마다 빈 폼 — 다른 인스턴스 값 잔존 방지)
         refs.databaseId.value = (kind === 'nrdbms' && p === 'gcp') ? ((sel && sel.instanceId) || '') : '';
-        refs.instanceId.value = '';
         refs.username.value = '';
         refs.usernameErr.classList.add('d-none');
         refs.usernameHelp.textContent = usernameHelp(kind, p);
@@ -2595,7 +2567,7 @@ const SamplePanel = (() => {
         let ok;
         if (kind === 'rdbms') ok = !!un && !!pw; // gen-mysql phase 3와 동일 게이트 (세부 검증은 API 응답)
         else if (p === 'gcp') ok = !!refs.databaseId.value.trim();
-        else if (p === 'aws') ok = !!refs.instanceId.value.trim();
+        else if (p === 'aws') ok = true; // 서버리스(DynamoDB) — 입력 불필요, Provider/Region만으로 생성
         else ok = !!un && !usernameError(kind, p, un) && !!pw && !!refs.database.value.trim();
         refs.submitBtn.disabled = !ok;
     }
@@ -2612,9 +2584,7 @@ const SamplePanel = (() => {
             port:     String(needsAccount() ? (sel?.port || '') : ''),
             username: refs.username.value.trim(),
             password: refs.password.value.trim(),
-            instanceId: (kind === 'nrdbms' && p === 'aws')
-                ? refs.instanceId.value.trim()
-                : ((sel && sel.instanceId) || ''),
+            instanceId: (sel && sel.instanceId) || '', // aws 서버리스는 빈 값 (백엔드 미사용)
         };
         if (kind === 'nrdbms') {
             targetPoint.databaseName  = refs.database.value.trim();
@@ -2664,14 +2634,3 @@ const SamplePanel = (() => {
 
     return { attach, canOpen, open };
 })();
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 테이블 외부 클릭 시 행 선택 해제 (Bucket/Instance 목록 공통)
-// 선택된 행을 다시 클릭한 것과 동일하게 처리해 각 페이지의 기존 토글 해제
-// 로직(하이라이트 제거·상태 정리)을 그대로 재사용한다.
-// 테이블·오프캔버스·모달·페이지네이션·상호작용 요소 클릭은 선택을 유지한다.
-// ─────────────────────────────────────────────────────────────────────────────
-document.addEventListener('click', e => {
-    if (e.target.closest('table, .offcanvas, .offcanvas-backdrop, .modal, .modal-backdrop, .pagination, .dropdown-menu, .form-select, button, a, input, select, textarea, label')) return;
-    document.querySelectorAll('tbody tr.table-active').forEach(r => r.click());
-});

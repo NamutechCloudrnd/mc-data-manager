@@ -635,7 +635,10 @@ func (m *FileScheduleManager) RunTasks(tasks []models.BasicDataTask) {
 			log.Warn().Msgf(" task status : %v", task.Status)
 			continue
 		}
-		task.Status = handleTask(task.ServiceType, task.TaskType, task)
+		task.Status = GetExecTracker().track(
+			metaFromTask(task.ServiceType, task.TaskType, task),
+			func() models.Status { return handleTask(task.ServiceType, task.TaskType, task) },
+		)
 		log.Debug().Msgf("status : %v", task.Status)
 		m.updateTaskStatus(task)
 	}
@@ -645,7 +648,7 @@ func (m *FileScheduleManager) RunTasks(tasks []models.BasicDataTask) {
 	}
 }
 
-func (m *FileScheduleManager) RunTaskOnce(task models.DataTask) bool {
+func (m *FileScheduleManager) RunTaskOnce(task models.DataTask, traceID ...string) bool {
 	// CreateTask
 	m.CreateTask(task)
 	// Call the handleTask function to process the task
@@ -653,7 +656,13 @@ func (m *FileScheduleManager) RunTaskOnce(task models.DataTask) bool {
 		log.Warn().Msgf(" task status : %v", task.Status)
 		return false
 	}
-	task.Status = handleTask(task.ServiceType, task.TaskType, task.BasicDataTask)
+	meta := metaFromTask(task.ServiceType, task.TaskType, task.BasicDataTask)
+	if len(traceID) > 0 {
+		meta.TraceID = traceID[0]
+	}
+	task.Status = GetExecTracker().track(meta,
+		func() models.Status { return handleTask(task.ServiceType, task.TaskType, task.BasicDataTask) },
+	)
 	m.updateTaskStatus(task.BasicDataTask)
 
 	if task.Status == models.StatusFailed {
@@ -935,7 +944,7 @@ func handleRDBMSGenerateTask(params models.BasicDataTask) models.Status {
 		}
 		log.Info().Msgf("Import start: %s", sqlPath)
 		if err := RDBC.Put(string(data)); err != nil {
-			log.Error().Msgf("Put error importing into rdbms")
+			log.Error().Msgf("Put error importing into rdbms: %v", err)
 			return models.StatusFailed
 		}
 		log.Info().Msgf("Import success: %s", sqlPath)
@@ -1091,7 +1100,7 @@ func handleRDBMSRestoreTask(params models.BasicDataTask) models.Status {
 		}
 		log.Info().Msgf("Import start: %s", sqlPath)
 		if err := RDBC.Put(string(data)); err != nil {
-			log.Error().Msg("Put error importing into rdbms")
+			log.Error().Msgf("Put error importing into rdbms: %v", err)
 			return models.StatusFailed
 		}
 		log.Info().Msgf("Import success: %s", sqlPath)
@@ -1148,7 +1157,7 @@ func handleNRDBMSGenerateTask(params models.BasicDataTask) models.Status {
 
 		log.Info().Msgf("Import start: %s", fileName)
 		if err := NRDBC.Put(tableName, &srcData); err != nil {
-			log.Error().Msgf("Put error importing into nrdbms")
+			log.Error().Msgf("Put error importing into nrdbms: %v", err)
 			return models.StatusFailed
 		}
 		log.Info().Msgf("successfully imported : %s", params.Dummy.DummyPath)

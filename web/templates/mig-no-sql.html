@@ -43,26 +43,7 @@
                     <div class="form-floating">
                         <select class="form-select form-select-sm rounded-end" id="sourceRegionSelect" name="sourcePoint[region]">
                             <option value="none" selected> - </option>
-                            <optgroup label="AWS regions" data-provider="aws" style="display: none;">
-                                {{ range $index, $value := .AWSRegions }}
-                                <option value="{{ $value }}">{{ $value }}</option>
-                                {{ end }}
-                            </optgroup>
-                            <optgroup label="GCP regions" data-provider="gcp" style="display: none;">
-                                {{ range $index, $value := .GCPRegions }}
-                                <option value="{{ $value }}">{{ $value }}</option>
-                                {{ end }}
-                            </optgroup>
-                            <optgroup label="NCP regions" data-provider="ncp" style="display: none;">
-                                {{ range $index, $value := .NCPRegions }}
-                                <option value="{{ $value }}">{{ $value }}</option>
-                                {{ end }}
-                            </optgroup>
-                            <optgroup label="ALIBABA regions" data-provider="alibaba" style="display: none;">
-                                {{ range $index, $value := .ALIBABARegions }}
-                                <option value="{{ $value }}">{{ $value }}</option>
-                                {{ end }}
-                            </optgroup>
+                            {{ template "region-optgroups-db.html" . }}
                         </select>
                         <label for="sourceRegionSelect">Select Region</label>
                     </div>
@@ -88,11 +69,11 @@
                     <table class="table table-bordered table-sm mb-0">
                         <thead>
                             <tr>
-                                <th>ID</th><th>Name</th><th>Status</th><th>Version</th><th>Host</th><th>Port</th>
+                                <th style="width:36px;"></th><th>ID</th><th>Name</th><th>Status</th><th>Version</th><th>Host</th><th>Port</th>
                             </tr>
                         </thead>
                         <tbody id="src-nrdb-table-body">
-                            <tr><td colspan="6" class="text-center text-muted small py-3">Select a credential and region to list instances</td></tr>
+                            <tr><td colspan="7" class="text-center text-muted small py-3">Select a credential and region to list instances</td></tr>
                         </tbody>
                     </table>
                     <div id="src-nrdb-pagination" class="mt-2 mb-3"></div>
@@ -147,13 +128,16 @@
                         <div class="d-flex justify-content-end mb-2">
                             <button type="button" class="btn btn-secondary btn-sm" id="src-nrdb-load-db-btn">Load Databases</button>
                         </div>
-                        <div class="input-group">
-                            <span class="input-group-text rounded-start"><i class="fa-solid fa-database"></i></span>
-                            <div class="form-floating">
-                                <select class="form-select rounded-end" id="mig-mongodb-databaseName" name="sourcePoint[databaseName]" required>
-                                    <option value="">- Select Database -</option>
-                                </select>
-                                <label for="mig-mongodb-databaseName">Database Name</label>
+                        <!-- Database section: shown after Load Databases (mig-mysql의 db-section과 동일 패턴) -->
+                        <div id="src-nrdb-db-section" style="display:none;" class="mt-2">
+                            <div class="input-group">
+                                <span class="input-group-text rounded-start"><i class="fa-solid fa-database"></i></span>
+                                <div class="form-floating">
+                                    <select class="form-select rounded-end" id="mig-mongodb-databaseName" name="sourcePoint[databaseName]" required>
+                                        <option value="">- Select Database -</option>
+                                    </select>
+                                    <label for="mig-mongodb-databaseName">Database Name</label>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -199,26 +183,7 @@
                     <div class="form-floating">
                         <select class="form-select form-select-sm rounded-end" id="targetRegionSelect" name="targetPoint[region]">
                             <option value="none" selected> - </option>
-                            <optgroup label="AWS regions" data-provider="aws" style="display: none;">
-                                {{ range $index, $value := .AWSRegions }}
-                                <option value="{{ $value }}">{{ $value }}</option>
-                                {{ end }}
-                            </optgroup>
-                            <optgroup label="GCP regions" data-provider="gcp" style="display: none;">
-                                {{ range $index, $value := .GCPRegions }}
-                                <option value="{{ $value }}">{{ $value }}</option>
-                                {{ end }}
-                            </optgroup>
-                            <optgroup label="NCP regions" data-provider="ncp" style="display: none;">
-                                {{ range $index, $value := .NCPRegions }}
-                                <option value="{{ $value }}">{{ $value }}</option>
-                                {{ end }}
-                            </optgroup>
-                            <optgroup label="ALIBABA regions" data-provider="alibaba" style="display: none;">
-                                {{ range $index, $value := .ALIBABARegions }}
-                                <option value="{{ $value }}">{{ $value }}</option>
-                                {{ end }}
-                            </optgroup>
+                            {{ template "region-optgroups-db.html" . }}
                         </select>
                         <label for="targetRegionSelect">Select Region</label>
                     </div>
@@ -244,11 +209,11 @@
                     <table class="table table-bordered table-sm mb-0">
                         <thead>
                             <tr>
-                                <th>ID</th><th>Name</th><th>Status</th><th>Version</th><th>Host</th><th>Port</th>
+                                <th style="width:36px;"></th><th>ID</th><th>Name</th><th>Status</th><th>Version</th><th>Host</th><th>Port</th>
                             </tr>
                         </thead>
                         <tbody id="tgt-nrdb-table-body">
-                            <tr><td colspan="6" class="text-center text-muted small py-3">Select a credential and region to list instances</td></tr>
+                            <tr><td colspan="7" class="text-center text-muted small py-3">Select a credential and region to list instances</td></tr>
                         </tbody>
                     </table>
                     <div id="tgt-nrdb-pagination" class="mt-2 mb-3"></div>
@@ -302,13 +267,16 @@
                         <div class="d-flex justify-content-end mb-2">
                             <button type="button" class="btn btn-secondary btn-sm" id="tgt-nrdb-load-db-btn">Load Databases</button>
                         </div>
-                        <div class="input-group">
-                            <span class="input-group-text rounded-start"><i class="fa-solid fa-database"></i></span>
-                            <div class="form-floating">
-                                <select class="form-select rounded-end" id="mig-target-mongodb-databaseName" name="targetPoint[databaseName]" required>
-                                    <option value="">- Select Database -</option>
-                                </select>
-                                <label for="mig-target-mongodb-databaseName">Database Name</label>
+                        <!-- Database section: shown after Load Databases (mig-mysql의 db-section과 동일 패턴) -->
+                        <div id="tgt-nrdb-db-section" style="display:none;" class="mt-2">
+                            <div class="input-group">
+                                <span class="input-group-text rounded-start"><i class="fa-solid fa-database"></i></span>
+                                <div class="form-floating">
+                                    <select class="form-select rounded-end" id="mig-target-mongodb-databaseName" name="targetPoint[databaseName]" required>
+                                        <option value="">- Select Database -</option>
+                                    </select>
+                                    <label for="mig-target-mongodb-databaseName">Database Name</label>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -337,7 +305,7 @@
     </div>
 </div>
 
-{{ template "db-instance-panel.html" . }}
+{{ template "instance-panel.html" . }}
 {{ template "sample-data-panel.html" . }}
 
 <style>
@@ -353,14 +321,6 @@ document.addEventListener('DOMContentLoaded', function () {
     // 선택 상태 (source / target 각각 단일 선택)
     let selectedSrcInstance = null;
     let selectedTgtInstance = null;
-
-    function nrdbStatusBadge(status) {
-        const s = (status || '').toLowerCase();
-        if (s === 'available') return `<span class="text-success small"><i class="bi bi-check-circle-fill me-1"></i>available</span>`;
-        if (s === 'deleting')  return `<span class="text-danger small"><span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>deleting</span>`;
-        if (s === 'failed')    return `<span class="text-danger small"><i class="bi bi-x-circle-fill me-1"></i>failed</span>`;
-        return `<span class="text-primary small"><i class="bi bi-hourglass-split ic-spin me-1"></i>creating</span>`;
-    }
 
     function providerOf(prefix) { return (document.getElementById(prefix + 'Point[provider]')?.value || '').toLowerCase(); }
     function regionOf(prefix) {
@@ -422,9 +382,10 @@ document.addEventListener('DOMContentLoaded', function () {
                         data-port="${inst.port || ''}"
                         data-name="${inst.name || iid}"
                         data-available="${available ? '1' : '0'}">
+                    <td class="text-center align-middle"><input type="checkbox" class="form-check-input row-select"${isSel ? ' checked' : ''}></td>
                     <td class="small">${iid || '-'}</td>
                     <td class="small">${inst.name || '-'}</td>
-                    <td>${nrdbStatusBadge(inst.status)}</td>
+                    <td>${instanceStatusBadge(inst.status)}</td>
                     <td class="small">${inst.engineVersion || '-'}</td>
                     <td class="small text-truncate" style="max-width:200px;" title="${inst.endpoint || ''}">${inst.endpoint || '-'}</td>
                     <td class="small">${inst.port || '-'}</td>
@@ -436,19 +397,12 @@ document.addEventListener('DOMContentLoaded', function () {
             return q ? allRows.filter(r => (r.name || r.instanceId || '').toLowerCase().includes(q)) : allRows;
         }
 
-        function renderPagination(total) {
-            const pages = Math.ceil(total / PAGE_SIZE) || 1;
-            const el = document.getElementById(cfg.pagId);
-            if (pages <= 1) { el.innerHTML = ''; return; }
-            let html = '<ul class="pagination pagination-sm mb-0">';
-            for (let i = 1; i <= pages; i++) {
-                html += `<li class="page-item${i === page ? ' active' : ''}"><a class="page-link" href="#" data-page="${i}">${i}</a></li>`;
-            }
-            html += '</ul>';
-            el.innerHTML = html;
-            el.querySelectorAll('a.page-link').forEach(a => {
-                a.addEventListener('click', e => { e.preventDefault(); page = +a.dataset.page; render(); });
-            });
+        // 인자는 '아이템 수'다 — 공용 renderPagination은 페이지 수를 받으므로 여기서 변환한다.
+        // 지역 이름이 전역 renderPagination을 가리므로 이름을 구분한다.
+        function renderPager(total) {
+            renderPagination(document.getElementById(cfg.pagId),
+                Math.ceil(total / PAGE_SIZE) || 1, page,
+                p => { page = p; render(); });
         }
 
         function render() {
@@ -458,11 +412,11 @@ document.addEventListener('DOMContentLoaded', function () {
             const tbody = document.getElementById(cfg.tbodyId);
             tbody.innerHTML = pageRows.length
                 ? pageRows.map(makeRow).join('')
-                : '<tr><td colspan="6" class="text-center text-muted small py-3">No instances found</td></tr>';
+                : '<tr><td colspan="7" class="text-center text-muted small py-3">No instances found</td></tr>';
             tbody.querySelectorAll('tr.' + rowClass()).forEach(row => {
                 row.addEventListener('click', () => onRowClick(row));
             });
-            renderPagination(list.length);
+            renderPager(list.length);
         }
 
         function clearConnect() {
@@ -477,9 +431,17 @@ document.addEventListener('DOMContentLoaded', function () {
         // ── Database 목록 (POST /db/nrdbms/databases) ──────────
         // 접속 정보(host/port/username/password) 입력 후 Load Databases 버튼으로
         // 서버의 실제 DB 목록을 조회해 select box에 채운다 (mig-mysql의 rdbms/databases 패턴).
+        // 모든 리셋 경로(clearFields·인스턴스 변경·조회 직전)가 이 함수를 지나므로 숨김도 여기서 처리한다.
+        // required 해제 필수: 이 폼은 collapse 단계형이 아니라 submit 직행이라,
+        // 숨겨진 required select가 남으면 검증이 non-focusable로 걸려 Submit이 조용히 막힌다.
         function resetDbSelect() {
             const sel = document.getElementById(cfg.databaseNameId);
-            if (sel) sel.innerHTML = '<option value="">- Select Database -</option>';
+            if (sel) {
+                sel.innerHTML = '<option value="">- Select Database -</option>';
+                sel.required = false;
+            }
+            const sec = document.getElementById(cfg.dbSectionId);
+            if (sec) sec.style.display = 'none';
         }
 
         function loadDatabases() {
@@ -509,6 +471,8 @@ document.addEventListener('DOMContentLoaded', function () {
                     opt.value = db; opt.textContent = db;
                     sel.appendChild(opt);
                 });
+                sel.required = true;
+                document.getElementById(cfg.dbSectionId).style.display = '';
             })
             .catch(err => alert(`Failed to load databases: ${err}`))
             .finally(() => { btn.disabled = false; btn.textContent = 'Load Databases'; });
@@ -568,18 +532,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 clearConnect();
             }
             applyProviderFields();
-            autoSelectRegion(d.instanceId);
+            autoSelectRegion(allRows, d.instanceId, document.getElementById(cfg.point + 'RegionSelect'));
             dbiPanel.refreshButtons();
-        }
-
-        // 행 선택 시 Region 셀렉트를 인스턴스 region과 대소문자 무시로 동기화 (auto-select).
-        // change는 dispatch하지 않는다 — 목록 리로드로 방금 한 선택이 풀리는 것을 방지.
-        function autoSelectRegion(instanceId) {
-            const inst = allRows.find(i => i.instanceId === instanceId);
-            const sel = document.getElementById(cfg.point + 'RegionSelect');
-            if (!inst || !inst.region || !sel) return;
-            const opt = [...sel.options].find(o => (o.value || '').toLowerCase() === String(inst.region).toLowerCase());
-            if (opt && sel.value !== opt.value) sel.value = opt.value;
         }
 
         // 진행 중 작업(creating/deleting)이 목록에 있으면 자동 재조회한다.
@@ -607,7 +561,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 body: JSON.stringify({ provider, region })
             })
             .then(r => r.ok ? r.json() : Promise.reject(r.status))
-            .then(json => { allRows = json || []; render(); scheduleTransitionalPoll(); })
+            .then(json => { allRows = json || []; render(); dbiPanel.refreshButtons(); scheduleTransitionalPoll(); })
             .catch(() => { scheduleTransitionalPoll(); });
         }
 
@@ -627,7 +581,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 allRows = []; page = 1; render(); stopTransitionalPoll();
                 return;
             }
-            tbody.innerHTML = '<tr><td colspan="6" class="text-center py-3"><span class="spinner-border spinner-border-sm"></span></td></tr>';
+            tbody.innerHTML = '<tr><td colspan="7" class="text-center py-3"><span class="spinner-border spinner-border-sm"></span></td></tr>';
             fetch('/db/nrdbms', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ provider, region })
@@ -637,9 +591,9 @@ document.addEventListener('DOMContentLoaded', function () {
             .catch(err => { console.error('load nrdb:', err); allRows = []; page = 1; render(); stopTransitionalPoll(); });
         }
 
-        // ── 인스턴스 생성/삭제 + 샘플데이터 생성 (DBInstancePanel/SamplePanel 공용 컴포넌트) ──
+        // ── 인스턴스 생성/삭제 + 샘플데이터 생성 (InstancePanel/SamplePanel 공용 컴포넌트) ──
         // 인스턴스 선택 시 '+ Instance' 버튼이 '+ Sample Data'로 전환된다 (gen-no-sql과 동일 UX).
-        const dbiPanel = DBInstancePanel.init({
+        const dbiPanel = InstancePanel.init({
             kind: 'nrdbms',
             getProvider: () => providerOf(cfg.point),
             getRegion: () => regionOf(cfg.point),
@@ -688,7 +642,7 @@ document.addEventListener('DOMContentLoaded', function () {
         prefix: 'src', point: 'source',
         hostId: 'mig-source-mongodb-host', portId: 'mig-source-mongodb-port',
         passwordId: 'mig-source-mongodb-password', databaseNameId: 'mig-mongodb-databaseName',
-        loadDbBtnId: 'src-nrdb-load-db-btn',
+        loadDbBtnId: 'src-nrdb-load-db-btn', dbSectionId: 'src-nrdb-db-section',
         connectId: 'src-nrdb-connect-section',
         mongoFieldsId: 'src-nrdb-mongo-fields', gcpFieldsId: 'src-nrdb-gcp-fields',
         gcpInstanceIdId: 'src-nrdb-gcp-instanceId', gcpDatabaseIdId: 'src-nrdb-gcp-databaseId',
@@ -702,7 +656,7 @@ document.addEventListener('DOMContentLoaded', function () {
         prefix: 'tgt', point: 'target',
         hostId: 'mig-target-mongodb-host', portId: 'mig-target-mongodb-port',
         passwordId: 'mig-target-mongodb-password', databaseNameId: 'mig-target-mongodb-databaseName',
-        loadDbBtnId: 'tgt-nrdb-load-db-btn',
+        loadDbBtnId: 'tgt-nrdb-load-db-btn', dbSectionId: 'tgt-nrdb-db-section',
         connectId: 'tgt-nrdb-connect-section',
         mongoFieldsId: 'tgt-nrdb-mongo-fields', gcpFieldsId: 'tgt-nrdb-gcp-fields',
         gcpInstanceIdId: 'tgt-nrdb-gcp-instanceId', gcpDatabaseIdId: 'tgt-nrdb-gcp-databaseId',

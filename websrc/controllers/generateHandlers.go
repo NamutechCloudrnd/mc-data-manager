@@ -79,7 +79,7 @@ func GenerateObjectStoragePostHandler(ctx echo.Context) error {
 
 	manager := task.GetFileScheduleManager()
 
-	if !manager.RunTaskOnce(params) {
+	if !manager.RunTaskOnce(params, traceIDFromCtx(ctx)) {
 		return ctx.JSON(http.StatusInternalServerError, models.BasicResponse{
 			Result: logstrings.String(),
 			Error:  nil,
@@ -145,7 +145,7 @@ func GenerateRDBMSPostHandler(ctx echo.Context) error {
 
 	manager := task.GetFileScheduleManager()
 
-	if !manager.RunTaskOnce(params) {
+	if !manager.RunTaskOnce(params, traceIDFromCtx(ctx)) {
 		return ctx.JSON(http.StatusInternalServerError, models.BasicResponse{
 			Result: logstrings.String(),
 			Error:  nil,
@@ -212,7 +212,7 @@ func GenerateNRDBMSPostHandler(ctx echo.Context) error {
 
 	manager := task.GetFileScheduleManager()
 
-	if !manager.RunTaskOnce(params) {
+	if !manager.RunTaskOnce(params, traceIDFromCtx(ctx)) {
 		return ctx.JSON(http.StatusInternalServerError, models.BasicResponse{
 			Result: logstrings.String(),
 			Error:  nil,

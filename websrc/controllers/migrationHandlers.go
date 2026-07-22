@@ -44,9 +44,11 @@ func MigrationObjectstoragePostHandler(ctx echo.Context) error {
 
 	params := models.DataTask{}
 	if !getDataWithReBind(logger, start, ctx, &params) {
-		return ctx.JSON(http.StatusInternalServerError, models.BasicResponse{
+		errStr := "Invalid request data"
+		logger.Error().Msg(errStr)
+		return ctx.JSON(http.StatusBadRequest, models.BasicResponse{
 			Result: logstrings.String(),
-			Error:  nil,
+			Error:  &errStr,
 		})
 	}
 
@@ -55,7 +57,7 @@ func MigrationObjectstoragePostHandler(ctx echo.Context) error {
 	params.TaskMeta.ServiceType = models.ObejectStorage
 	manager := task.GetFileScheduleManager()
 
-	if !manager.RunTaskOnce(params) {
+	if !manager.RunTaskOnce(params, traceIDFromCtx(ctx)) {
 		return ctx.JSON(http.StatusInternalServerError, models.BasicResponse{
 			Result: logstrings.String(),
 			Error:  nil,
@@ -89,9 +91,10 @@ func MigrationNRDBMSPostHandler(ctx echo.Context) error {
 
 	params := models.DataTask{}
 	if !getDataWithReBind(logger, start, ctx, &params) {
-		return ctx.JSON(http.StatusInternalServerError, models.BasicResponse{
+		errStr := "Invalid request data"
+		return ctx.JSON(http.StatusBadRequest, models.BasicResponse{
 			Result: logstrings.String(),
-			Error:  nil,
+			Error:  &errStr,
 		})
 	}
 	params.TaskMeta.TaskID = params.OperationId
@@ -99,7 +102,7 @@ func MigrationNRDBMSPostHandler(ctx echo.Context) error {
 	params.TaskMeta.ServiceType = models.NRDBMS
 	manager := task.GetFileScheduleManager()
 
-	if !manager.RunTaskOnce(params) {
+	if !manager.RunTaskOnce(params, traceIDFromCtx(ctx)) {
 		return ctx.JSON(http.StatusInternalServerError, models.BasicResponse{
 			Result: logstrings.String(),
 			Error:  nil,
@@ -133,9 +136,10 @@ func MigrationRDBMSPostHandler(ctx echo.Context) error {
 
 	params := models.DataTask{}
 	if !getDataWithReBind(logger, start, ctx, &params) {
-		return ctx.JSON(http.StatusInternalServerError, models.BasicResponse{
+		errStr := "Invalid request data"
+		return ctx.JSON(http.StatusBadRequest, models.BasicResponse{
 			Result: logstrings.String(),
-			Error:  nil,
+			Error:  &errStr,
 		})
 	}
 	params.TaskMeta.TaskID = params.OperationId
@@ -143,7 +147,7 @@ func MigrationRDBMSPostHandler(ctx echo.Context) error {
 	params.TaskMeta.ServiceType = models.RDBMS
 	manager := task.GetFileScheduleManager()
 
-	if !manager.RunTaskOnce(params) {
+	if !manager.RunTaskOnce(params, traceIDFromCtx(ctx)) {
 		return ctx.JSON(http.StatusInternalServerError, models.BasicResponse{
 			Result: logstrings.String(),
 			Error:  nil,

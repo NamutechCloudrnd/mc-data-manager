@@ -25,17 +25,44 @@
             <div class="card rounded-3 mb-3 p-3">
                 <div class="input-group mb-3">
                     <div class="form-floating">
-                        <input type="text" class="form-control" id="sourcePointLabel" placeholder="Source" style="border: 0; background-color: white;" value="Restore Path" required disabled>
+                        <input type="text" class="form-control" id="sourcePointLabel" placeholder="Source" style="border: 0; background-color: white;" value="Restore" required disabled>
                         <label for="sourcePointLabel">Source</label>
                     </div>
                 </div>
-                <div class="input-group">
-                    <span class="input-group-text rounded-start"><i class="fas fa-folder"></i></span>
-                    <div class="form-floating">
-                      <input type="text" class="form-control rounded-end" id="mig-linux-path" name="sourcePoint[path]" value="/tmp/dummy" placeholder="디렉토리 경로">
-                      <label for="mig-linux-path">Path</label>
+                <!-- 선택한 Backup의 ID를 제출 계약(sourcePoint[backupId])으로 전달. 목록에서 백업 선택 시 채워짐. -->
+                <input type="hidden" id="mig-linux-path" name="sourcePoint[backupId]" value="">
+                <!-- ── Backup List (조회/삭제) — Source 위치. Restore는 조회 + 삭제. ── -->
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <span class="text-muted small fw-semibold">Backup List</span>
+                    <div class="d-flex gap-2 align-items-center">
+                        <div class="input-group input-group-sm" style="width:200px;">
+                            <span class="input-group-text"><i class="bi bi-search"></i></span>
+                            <input type="text" class="form-control" id="backup-search" placeholder="Search by name">
+                        </div>
+                        <button type="button" class="btn btn-danger btn-sm" id="backup-deleteBtn" disabled>
+                            <i class="bi bi-trash3 me-1"></i>Delete
+                        </button>
                     </div>
                 </div>
+                <table class="table table-bordered table-sm mb-0">
+                    <thead>
+                        <tr>
+                            <th style="width:36px;"></th>
+                            <th>Backup Name</th>
+                            <th>Provider</th>
+                            <th>Region</th>
+                            <th>Instance ID</th>
+                            <th>Instance Name</th>
+                            <th>Database Name</th>
+                            <th>Status</th>
+                            <th>Created</th>
+                        </tr>
+                    </thead>
+                    <tbody id="backup-table-body">
+                        <tr><td colspan="9" class="text-center text-muted small py-3">Loading backups…</td></tr>
+                    </tbody>
+                </table>
+                <div id="backup-pagination" class="mt-2"></div>
             </div>
             <div class="card rounded-3 mb-3 p-3">
                 <div class="input-group mb-3">
@@ -59,46 +86,7 @@
                         <div class="form-floating">
                             <select class="form-select form-select-sm rounded-end" id="targetRegionSelect" name="targetPoint[region]">
                                 <option value="none" selected> - </option>
-                                <optgroup label="AWS regions" data-provider="aws" style="display: none;">
-                                    {{ range $index, $value := .AWSRegions }}
-                                        <option value="{{ $value }}">{{ $value }}</option>
-                                    {{ end }}
-                                </optgroup>
-                                <optgroup label="GCP regions" data-provider="gcp" style="display: none;">
-                                    {{ range $index, $value := .GCPRegions }}
-                                        <option value="{{ $value }}">{{ $value }}</option>
-                                    {{ end }}
-                                </optgroup>
-                                <optgroup label="NCP regions" data-provider="ncp" style="display: none;">
-                                    {{ range $index, $value := .NCPRegions }}
-                                        <option value="{{ $value }}">{{ $value }}</option>
-                                    {{ end }}
-                                </optgroup>
-                                <optgroup label="ALIBABA regions" data-provider="alibaba" style="display: none;">
-                                    {{ range $index, $value := .ALIBABARegions }}
-                                        <option value="{{ $value }}">{{ $value }}</option>
-                                    {{ end }}
-                                </optgroup>
-                                <optgroup label="IBM regions" data-provider="ibm" style="display: none;">
-                                    {{ range $index, $value := .IBMRegions }}
-                                        <option value="{{ $value }}">{{ $value }}</option>
-                                    {{ end }}
-                                </optgroup>
-                                <optgroup label="KT regions" data-provider="kt" style="display: none;">
-                                    {{ range $index, $value := .KTRegions }}
-                                        <option value="{{ $value }}">{{ $value }}</option>
-                                    {{ end }}
-                                </optgroup>
-                                <optgroup label="TENCENT regions" data-provider="tencent" style="display: none;">
-                                    {{ range $index, $value := .TencentRegions }}
-                                        <option value="{{ $value }}">{{ $value }}</option>
-                                    {{ end }}
-                                </optgroup>
-                                <optgroup label="NHN regions" data-provider="nhn" style="display:none;">
-                                    {{ range $index, $value := .NHNRegions }}
-                                    <option value="{{ $value }}">{{ $value }}</option>
-                                    {{ end }}
-                                </optgroup>
+                                {{ template "region-optgroups-csp.html" . }}
                             </select>
                             <label for="targetRegionSelect">Select Region</label>
                         </div>
@@ -123,6 +111,7 @@
                     <table class="table table-bordered table-sm mb-0">
                         <thead>
                             <tr>
+                                <th style="width:36px;"></th>
                                 <th>Resource ID</th>
                                 <th>Name</th>
                                 <th>Region</th>
@@ -132,7 +121,7 @@
                             </tr>
                         </thead>
                         <tbody id="res-bkt-body">
-                            <tr><td colspan="6" class="text-center text-muted small py-3">Select a credential to list buckets</td></tr>
+                            <tr><td colspan="7" class="text-center text-muted small py-3">Select a credential to list buckets</td></tr>
                         </tbody>
                     </table>
                     <div id="res-bkt-pagination" class="mt-2"></div>
@@ -158,15 +147,27 @@
                             <button type="button" class="btn btn-danger btn-sm" id="res-rdbms-deleteBtn" disabled>
                                 <i class="bi bi-trash3 me-1"></i>Delete
                             </button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="refresh-endpoint-btn" title="Reload the latest Host">
+                                <i class="bi bi-arrow-clockwise me-1"></i>Refresh Host
+                            </button>
                             <button type="button" class="btn btn-primary btn-sm" id="res-rdbms-createBtn" disabled>
                                 <i class="bi bi-plus-lg me-1"></i>Instance
                             </button>
                         </div>
                     </div>
+
+                    <!-- NCP Public Domain guide — 선택 인스턴스 Host가 아직 사설이면 표시, Refresh Host로 재조회 -->
+                    <div id="ncp-pub-guide" class="alert alert-info py-2 px-3 mb-3 small d-none">
+                        <div class="fw-semibold mb-1"><i class="bi bi-info-circle-fill me-1"></i>NCP Public Domain</div>
+                        A Public Domain must be enabled in the NCP Console to connect from outside.<br>
+                        Open the <a href="https://console.ncloud.com/vpcCloudMysql/server" target="_blank" rel="noopener noreferrer" class="fw-semibold">NCP Console &#8599;</a>, select the instance, and go to
+                        <strong>DB Management &gt; Public Domain Management</strong>.<br>
+                        After it is assigned, click <strong>Refresh Host</strong> to load the latest Host.
+                    </div>
                     <table class="table table-bordered table-sm mb-0">
                         <thead>
                             <tr>
-                                <th>ID</th>
+                                <th style="width:36px;"></th><th>ID</th>
                                 <th>Name</th>
                                 <th>Status</th>
                                 <th>Version</th>
@@ -176,7 +177,7 @@
                             </tr>
                         </thead>
                         <tbody id="restore-rdbms-table-body">
-                            <tr><td colspan="7" class="text-center text-muted small py-3">Select a credential and region to list instances</td></tr>
+                            <tr><td colspan="8" class="text-center text-muted small py-3">Select a credential and region to list instances</td></tr>
                         </tbody>
                     </table>
                     <div id="restore-rdbms-pagination" class="mt-2"></div>
@@ -228,17 +229,29 @@
                                 <button type="button" class="btn btn-danger btn-sm" id="res-nrdb-deleteBtn" disabled>
                                     <i class="bi bi-trash3 me-1"></i>Delete
                                 </button>
+                                <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="refresh-host-btn" title="Reload the latest Host">
+                                    <i class="bi bi-arrow-clockwise me-1"></i>Refresh Host
+                                </button>
                                 <button type="button" class="btn btn-primary btn-sm" id="res-nrdb-createBtn" disabled>
                                     <i class="bi bi-plus-lg me-1"></i>Instance
                                 </button>
                             </div>
                         </div>
+
+                        <!-- NCP Public Domain guide (MongoDB) — 선택 인스턴스 Host가 아직 사설이면 표시, Refresh Host로 재조회 -->
+                        <div id="ncp-pub-guide-nrdb" class="alert alert-info py-2 px-3 mb-3 small d-none">
+                            <div class="fw-semibold mb-1"><i class="bi bi-info-circle-fill me-1"></i>NCP Public Domain</div>
+                            A Public Domain must be enabled in the NCP Console to connect from outside.<br>
+                            Open the <a href="https://console.ncloud.com/" target="_blank" rel="noopener noreferrer" class="fw-semibold">NCP Console &#8599;</a> and go to
+                            <strong>Cloud DB for MongoDB &gt; DB Management &gt; Public Domain Management</strong>.<br>
+                            After it is assigned, click <strong>Refresh Host</strong> to load the latest Host.
+                        </div>
                         <table class="table table-bordered table-sm mb-0">
                             <thead>
-                                <tr><th>ID</th><th>Name</th><th>Status</th><th>Version</th><th>Host</th><th>Port</th></tr>
+                                <tr><th style="width:36px;"></th><th>ID</th><th>Name</th><th>Status</th><th>Version</th><th>Host</th><th>Port</th></tr>
                             </thead>
                             <tbody id="restore-nrdb-table-body">
-                                <tr><td colspan="6" class="text-center text-muted small py-3">Select a credential and region to list instances</td></tr>
+                                <tr><td colspan="7" class="text-center text-muted small py-3">Select a credential and region to list instances</td></tr>
                             </tbody>
                         </table>
                         <div id="restore-nrdb-pagination" class="mt-2"></div>
@@ -290,13 +303,16 @@
                         <div class="d-flex justify-content-end mb-2">
                             <button type="button" class="btn btn-secondary btn-sm" id="nrdb-load-db-btn">Load Databases</button>
                         </div>
-                        <div class="input-group">
-                            <span class="input-group-text rounded-start"><i class="fa-solid fa-database"></i></span>
-                            <div class="form-floating">
-                                <select class="form-select rounded-end" id="nosql-databaseName" name="targetPoint[databaseName]">
-                                    <option value="">- Select Database -</option>
-                                </select>
-                                <label for="nosql-databaseName">DataBase Name</label>
+                        <!-- Database section: shown after Load Databases (mig-mysql의 db-section과 동일 패턴) -->
+                        <div id="nrdb-db-section" style="display:none;" class="mt-2">
+                            <div class="input-group">
+                                <span class="input-group-text rounded-start"><i class="fa-solid fa-database"></i></span>
+                                <div class="form-floating">
+                                    <select class="form-select rounded-end" id="nosql-databaseName" name="targetPoint[databaseName]">
+                                        <option value="">- Select Database -</option>
+                                    </select>
+                                    <label for="nosql-databaseName">DataBase Name</label>
+                                </div>
                             </div>
                         </div>
                         </div><!-- /restore-nrdb-mongo-fields -->
@@ -326,8 +342,30 @@
 </div>
 
 {{ template "bucket-panel.html" . }}
-{{ template "db-instance-panel.html" . }}
+{{ template "instance-panel.html" . }}
 {{ template "sample-data-panel.html" . }}
+
+<!-- 백업 삭제 확인 모달 (Backup List 전용) -->
+<div class="modal fade" id="backupDeleteModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header border-bottom-0 pb-1">
+                <h5 class="modal-title text-danger fw-semibold">Delete Backup</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body pt-1">
+                <p class="mb-2 small">You are about to permanently delete <strong id="backup-delete-name"></strong>.</p>
+                <p class="mb-3 small">To delete this backup, enter its Backup Name.</p>
+                <input type="text" class="form-control" id="backup-delete-input" placeholder="Backup Name" autocomplete="off">
+                <div id="backup-delete-error" class="text-danger small mt-1 d-none">Backup name does not match.</div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" id="backup-delete-confirm" disabled><i class="bi bi-trash3 me-1"></i>Delete</button>
+            </div>
+        </div>
+    </div>
+</div>
 
 <style>
 @keyframes ic-spin      { to { transform: rotate(360deg); } }
@@ -349,7 +387,7 @@ const target = {
     // BucketPanel은 scripts.js(footer 로드)에 정의되므로 인라인 최상위에서 호출하면
     // 아직 미정의(ReferenceError) → 반드시 DOMContentLoaded 이후에 초기화한다.
     let resPanel = null;
-    let resRdbmsDbiPanel = null; // SQL 인스턴스 생성/삭제 (DBInstancePanel 공용 컴포넌트)
+    let resRdbmsDbiPanel = null; // SQL 인스턴스 생성/삭제 (InstancePanel 공용 컴포넌트)
     let resNrdbDbiPanel = null;  // NoSQL 인스턴스 생성/삭제 (동일 컴포넌트, kind='nrdbms')
     document.addEventListener("DOMContentLoaded", () => {
         resPanel = BucketPanel.init({
@@ -362,7 +400,7 @@ const target = {
             deleteBtn: document.getElementById('deleteInstanceBtn'),
             createBtn: document.getElementById('res-bkt-createBtn'),
         });
-        resRdbmsDbiPanel = DBInstancePanel.init({
+        resRdbmsDbiPanel = InstancePanel.init({
             kind: 'rdbms',
             getProvider: () => target.provider.value || '',
             getRegion: getTargetRegion,
@@ -382,7 +420,7 @@ const target = {
                 renderRestoreRdbmsTable();
             },
         });
-        resNrdbDbiPanel = DBInstancePanel.init({
+        resNrdbDbiPanel = InstancePanel.init({
             kind: 'nrdbms',
             getProvider: () => target.provider.value || '',
             getRegion: getTargetRegion,
@@ -625,17 +663,6 @@ const target = {
     let selectedRestoreInstance = null;
     const RESTORE_PAGE_SIZE = 5;
 
-    function rdbmsStatusBadge(status) {
-        const s = (status || '').toLowerCase();
-        if (s === 'available') {
-            return `<span class="text-success small"><i class="bi bi-check-circle-fill me-1"></i>available</span>`;
-        }
-        if (s === 'deleting') {
-            return `<span class="text-danger small"><span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>deleting</span>`;
-        }
-        return `<span class="text-primary small"><i class="bi bi-hourglass-split ic-spin me-1"></i>creating</span>`;
-    }
-
     function makeRestoreRdbmsRow(inst) {
         const available = (inst.status || '').toLowerCase() === 'available';
         const isSelected = selectedRestoreInstance && selectedRestoreInstance.instanceId === inst.instanceId;
@@ -645,9 +672,10 @@ const target = {
                     data-port="${inst.port || ''}"
                     data-name="${inst.name || inst.instanceId || ''}"
                     data-available="${available ? '1' : '0'}">
+                    <td class="text-center align-middle"><input type="checkbox" class="form-check-input row-select"${isSelected ? ' checked' : ''}></td>
                     <td class="small">${inst.instanceId || '-'}</td>
                     <td class="small">${inst.name || '-'}</td>
-                    <td>${rdbmsStatusBadge(inst.status)}</td>
+                    <td>${instanceStatusBadge(inst.status)}</td>
                     <td class="small">${inst.engineVersion || '-'}</td>
                     <td class="small text-truncate" style="max-width:200px;" title="${inst.endpoint || ''}">${inst.endpoint || '-'}</td>
                     <td class="small">${inst.port || '-'}</td>
@@ -660,29 +688,50 @@ const target = {
         return q ? restoreRdbmsAllRows.filter(r => (r.name || '').toLowerCase().includes(q)) : restoreRdbmsAllRows;
     }
 
-    function renderRestoreRdbmsPagination(total) {
-        const container = document.getElementById('restore-rdbms-pagination');
-        if (!container || total <= 1) { if (container) container.innerHTML = ''; return; }
-        const totalPages = total;
-        const range = totalPages <= 7
-            ? Array.from({length: totalPages}, (_, i) => i + 1)
-            : [1, ...(restoreRdbmsPage > 3 ? ['...'] : []),
-               ...Array.from({length: Math.min(3, totalPages-2)}, (_, i) => Math.max(2, restoreRdbmsPage-1) + i).filter(p => p > 1 && p < totalPages),
-               ...(restoreRdbmsPage < totalPages - 2 ? ['...'] : []), totalPages];
-        const prev = `<li class="page-item ${restoreRdbmsPage===1?'disabled':''}"><a class="page-link" href="#" data-page="${restoreRdbmsPage-1}">‹</a></li>`;
-        const next = `<li class="page-item ${restoreRdbmsPage===totalPages?'disabled':''}"><a class="page-link" href="#" data-page="${restoreRdbmsPage+1}">›</a></li>`;
-        const pages = range.map(p => p === '...'
-            ? `<li class="page-item disabled"><span class="page-link">…</span></li>`
-            : `<li class="page-item ${p===restoreRdbmsPage?'active':''}"><a class="page-link" href="#" data-page="${p}">${p}</a></li>`
-        ).join('');
-        container.innerHTML = `<nav><ul class="pagination pagination-sm mb-0 justify-content-center">${prev}${pages}${next}</ul></nav>`;
-        container.querySelectorAll('a.page-link').forEach(link => {
-            link.addEventListener('click', e => {
-                e.preventDefault();
-                const p = parseInt(e.currentTarget.dataset.page);
-                if (!isNaN(p)) { restoreRdbmsPage = p; renderRestoreRdbmsTable(); }
-            });
-        });
+    // 인자는 '페이지 수'다 (renderRestoreRdbmsTable에서 Math.ceil로 계산해서 넘김)
+    function renderRestoreRdbmsPagination(totalPages) {
+        renderPagination(document.getElementById('restore-rdbms-pagination'), totalPages, restoreRdbmsPage,
+            p => { restoreRdbmsPage = p; renderRestoreRdbmsTable(); });
+    }
+
+    // ── NCP Public Domain (RDBMS) — gen-mysql 이식. nrdbms와 id/함수명 분리 ──
+    // 재조회로 선택 인스턴스 endpoint/port가 갱신되면 선택 상태·Host/Port 입력에 반영 (Refresh Host용)
+    function reconcileSelectedRestoreRdbms() {
+        if (!selectedRestoreInstance) return;
+        const cur = restoreRdbmsAllRows.find(i => i.instanceId === selectedRestoreInstance.instanceId);
+        if (!cur) return;
+        selectedRestoreInstance.endpoint = cur.endpoint;
+        selectedRestoreInstance.port = cur.port;
+        const h = document.getElementById('mysql-srcHost'); if (h && !h.disabled) h.value = cur.endpoint || '';
+        const p = document.getElementById('mysql-srcPort'); if (p && !p.disabled) p.value = cur.port || '';
+    }
+    // Host가 접속 가능한 상태인지 (ncp/alibaba: 공인 'pub' 도메인 필요)
+    function isRestoreRdbmsHostReady(endpoint, provider) {
+        const host = endpoint || '';
+        const p = (provider || document.getElementById('targetPoint[provider]')?.value || '').toLowerCase();
+        if (p === 'alibaba' || p === 'ncp') return host.includes('pub');
+        return !!host;
+    }
+    // NCP + 선택 인스턴스 Host가 아직 사설이면 가이드 표시, 선택 시 Refresh Host 노출
+    function updateRestoreRdbmsNcpUI() {
+        const provider = document.getElementById('targetPoint[provider]')?.value || '';
+        const target = (provider === 'ncp' && selectedRestoreInstance) ? selectedRestoreInstance : null;
+        const needsPublic = !!target && !isRestoreRdbmsHostReady(target.endpoint, 'ncp');
+        document.getElementById('ncp-pub-guide').classList.toggle('d-none', !needsPublic);
+        document.getElementById('refresh-endpoint-btn').classList.toggle('d-none', !target);
+    }
+    // Refresh Host용 재조회 — loadRdbmsTable과 달리 선택을 비우지 않는다 (선택 인스턴스 Host 갱신)
+    function refreshRestoreRdbData() {
+        const provider = document.getElementById('targetPoint[provider]')?.value || '';
+        const region   = getTargetRegion();
+        if (!provider || provider === 'none' || !region || region === 'none') return;
+        return fetch('/db/rdbms', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ provider, region })
+        })
+        .then(r => r.ok ? r.json() : Promise.reject(r.status))
+        .then(json => { restoreRdbmsAllRows = json || []; renderRestoreRdbmsTable(); resRdbmsDbiPanel?.refreshButtons(); })
+        .catch(err => console.error('refreshRestoreRdbData:', err));
     }
 
     function renderRestoreRdbmsTable() {
@@ -693,8 +742,10 @@ const target = {
         if (restoreRdbmsPage > totalPages) restoreRdbmsPage = totalPages;
 
         if (!filtered.length) {
-            tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted small py-3">No instances found</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted small py-3">No instances found</td></tr>';
             renderRestoreRdbmsPagination(0);
+            reconcileSelectedRestoreRdbms();
+            updateRestoreRdbmsNcpUI();
             return;
         }
         const start = (restoreRdbmsPage - 1) * RESTORE_PAGE_SIZE;
@@ -720,6 +771,8 @@ const target = {
             });
         });
         renderRestoreRdbmsPagination(totalPages);
+        reconcileSelectedRestoreRdbms();
+        updateRestoreRdbmsNcpUI();
     }
 
     function applyRestoreRdbmsSelection() {
@@ -734,17 +787,11 @@ const target = {
             document.getElementById('restore-rdbms-connect').style.display = 'none';
         }
         resRdbmsDbiPanel?.refreshButtons();
+        updateRestoreRdbmsNcpUI();
     }
 
     // Region 셀렉트를 인스턴스의 region과 대소문자 무시로 동기화.
     // change는 dispatch하지 않는다 — 목록 리로드로 방금 한 선택이 풀리는 것을 방지.
-    function autoSelectRegion(rows, instanceId, regionSel) {
-        const inst = (rows || []).find(i => i.instanceId === instanceId);
-        if (!inst || !inst.region || !regionSel) return;
-        const opt = [...regionSel.options].find(o => (o.value || '').toLowerCase() === String(inst.region).toLowerCase());
-        if (opt && regionSel.value !== opt.value) regionSel.value = opt.value;
-    }
-
     function getTargetRegion() {
         const r = document.getElementById('targetRegionSelect')?.value || '';
         const p = document.getElementById('targetPoint[provider]')?.value || '';
@@ -757,7 +804,7 @@ const target = {
         if (!provider || provider === 'none' || !region || region === 'none') return;
 
         const tbody = document.getElementById('restore-rdbms-table-body');
-        if (tbody) tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted small py-3"><span class="spinner-border spinner-border-sm me-2"></span>Loading...</td></tr>';
+        if (tbody) tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted small py-3"><span class="spinner-border spinner-border-sm me-2"></span>Loading...</td></tr>';
         selectedRestoreInstance = null;
         document.getElementById('restore-rdbms-connect').style.display = 'none';
         document.getElementById('mysql-srcHost').value = '';
@@ -774,6 +821,15 @@ const target = {
     }
 
     document.getElementById('rdbms-search')?.addEventListener('input', () => { restoreRdbmsPage = 1; renderRestoreRdbmsTable(); });
+
+    // NCP: 콘솔에서 Public 도메인 활성화 후 Host 1회 재조회 (폴링 아님) — 선택 보존 위해 refreshRestoreRdbData 사용
+    document.getElementById('refresh-endpoint-btn')?.addEventListener('click', async function () {
+        if (!selectedRestoreInstance) return;
+        this.disabled = true;
+        this.innerHTML = '<span class="spinner-border spinner-border-sm" role="status"></span>';
+        try { await refreshRestoreRdbData(); }
+        finally { this.disabled = false; this.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i>Refresh Host'; }
+    });
 
     // ── NRDBMS (NoSQL) instance table: 조회 전용 ────────────────
     let restoreNrdbAllRows = [], restoreNrdbPage = 1;
@@ -799,13 +855,39 @@ const target = {
         const provider = document.getElementById('targetPoint[provider]')?.value || '';
         const region   = getTargetRegion();
         if (target.service.value !== 'nrdbms' || !provider || provider === 'none' || !region || region === 'none') { stopRestoreNrdbPoll(); return; }
-        fetch('/db/nrdbms', {
+        return fetch('/db/nrdbms', {
             method: 'POST', headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ provider, region })
         })
         .then(r => r.ok ? r.json() : Promise.reject(r.status))
-        .then(json => { restoreNrdbAllRows = json || []; renderRestoreNrdbTable(); scheduleRestoreNrdbPoll(); })
+        .then(json => { restoreNrdbAllRows = json || []; renderRestoreNrdbTable(); resNrdbDbiPanel?.refreshButtons(); scheduleRestoreNrdbPoll(); })
         .catch(() => { scheduleRestoreNrdbPoll(); });
+    }
+
+    // ── NCP Public Domain (MongoDB) — gen-no-sql 이식 ──
+    // 재조회로 선택 인스턴스 endpoint/port가 갱신되면 선택 상태·Host/Port 입력에 반영 (Refresh Host용)
+    function reconcileSelectedRestoreNrdb() {
+        if (!selectedRestoreNrdbInstance) return;
+        const cur = restoreNrdbAllRows.find(i => i.instanceId === selectedRestoreNrdbInstance.instanceId);
+        if (!cur) return;
+        selectedRestoreNrdbInstance.endpoint = cur.endpoint;
+        selectedRestoreNrdbInstance.port = cur.port;
+        const h = document.getElementById('nosql-srcHost'); if (h && !h.disabled) h.value = cur.endpoint || '';
+        const p = document.getElementById('nosql-srcPort'); if (p && !p.disabled) p.value = cur.port || '';
+    }
+    // Host가 접속 가능한 상태인지 (ncp/alibaba MongoDB: 공인 'pub' 도메인 필요)
+    function isRestoreNrdbHostReady(endpoint, provider) {
+        const p = (provider || document.getElementById('targetPoint[provider]')?.value || '').toLowerCase();
+        if (p === 'alibaba' || p === 'ncp') return (endpoint || '').includes('pub');
+        return true; // aws(서버리스)/gcp(Firestore)는 endpoint 개념 없음
+    }
+    // NCP + 선택 인스턴스 Host가 아직 사설이면 가이드 표시, 선택 시 Refresh Host 노출
+    function updateRestoreNrdbNcpUI() {
+        const provider = document.getElementById('targetPoint[provider]')?.value || '';
+        const target = (provider === 'ncp' && selectedRestoreNrdbInstance) ? selectedRestoreNrdbInstance : null;
+        const needsPublic = !!target && !isRestoreNrdbHostReady(target.endpoint, 'ncp');
+        document.getElementById('ncp-pub-guide-nrdb').classList.toggle('d-none', !needsPublic);
+        document.getElementById('refresh-host-btn').classList.toggle('d-none', !target);
     }
 
     function makeRestoreNrdbRow(inst) {
@@ -818,9 +900,10 @@ const target = {
                     data-port="${inst.port || ''}"
                     data-name="${inst.name || iid}"
                     data-available="${available ? '1' : '0'}">
+                    <td class="text-center align-middle"><input type="checkbox" class="form-check-input row-select"${isSelected ? ' checked' : ''}></td>
                     <td class="small">${iid || '-'}</td>
                     <td class="small">${inst.name || '-'}</td>
-                    <td>${rdbmsStatusBadge(inst.status)}</td>
+                    <td>${instanceStatusBadge(inst.status)}</td>
                     <td class="small">${inst.engineVersion || '-'}</td>
                     <td class="small text-truncate" style="max-width:200px;" title="${inst.endpoint || ''}">${inst.endpoint || '-'}</td>
                     <td class="small">${inst.port || '-'}</td>
@@ -832,22 +915,10 @@ const target = {
         return q ? restoreNrdbAllRows.filter(r => (r.name || r.instanceId || '').toLowerCase().includes(q)) : restoreNrdbAllRows;
     }
 
+    // 인자는 '페이지 수'다 (renderRestoreNrdbTable에서 Math.ceil로 계산해서 넘김)
     function renderRestoreNrdbPagination(totalPages) {
-        const container = document.getElementById('restore-nrdb-pagination');
-        if (!container || totalPages <= 1) { if (container) container.innerHTML = ''; return; }
-        let html = '<nav><ul class="pagination pagination-sm mb-0 justify-content-center">';
-        for (let i = 1; i <= totalPages; i++) {
-            html += `<li class="page-item ${i === restoreNrdbPage ? 'active' : ''}"><a class="page-link" href="#" data-page="${i}">${i}</a></li>`;
-        }
-        html += '</ul></nav>';
-        container.innerHTML = html;
-        container.querySelectorAll('a.page-link').forEach(link => {
-            link.addEventListener('click', e => {
-                e.preventDefault();
-                const p = parseInt(e.currentTarget.dataset.page);
-                if (!isNaN(p)) { restoreNrdbPage = p; renderRestoreNrdbTable(); }
-            });
-        });
+        renderPagination(document.getElementById('restore-nrdb-pagination'), totalPages, restoreNrdbPage,
+            p => { restoreNrdbPage = p; renderRestoreNrdbTable(); });
     }
 
     function renderRestoreNrdbTable() {
@@ -857,8 +928,10 @@ const target = {
         const totalPages = Math.max(1, Math.ceil(filtered.length / RESTORE_PAGE_SIZE));
         if (restoreNrdbPage > totalPages) restoreNrdbPage = totalPages;
         if (!filtered.length) {
-            tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted small py-3">No instances found</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted small py-3">No instances found</td></tr>';
             renderRestoreNrdbPagination(1);
+            reconcileSelectedRestoreNrdb();
+            updateRestoreNrdbNcpUI();
             return;
         }
         const start = (restoreNrdbPage - 1) * RESTORE_PAGE_SIZE;
@@ -867,6 +940,8 @@ const target = {
             row.addEventListener('click', () => onRestoreNrdbRowClick(row));
         });
         renderRestoreNrdbPagination(totalPages);
+        reconcileSelectedRestoreNrdb();
+        updateRestoreNrdbNcpUI();
     }
 
     // provider별 접속 필드 표시/제출 제어 (gen-no-sql과 동일 규칙).
@@ -896,9 +971,12 @@ const target = {
     // ── Database 목록 (POST /db/nrdbms/databases) ──────────
     // 접속 정보(host/port/username/password) 입력 후 Load Databases 버튼으로
     // 서버의 실제 DB 목록을 조회해 select box에 채운다 (mig-mysql의 rdbms/databases 패턴).
+    // 모든 리셋 경로(인스턴스 변경·조회 직전 등)가 이 함수를 지나므로 숨김도 여기서 처리한다.
     function resetNrdbDbSelect() {
         const sel = document.getElementById('nosql-databaseName');
         if (sel) sel.innerHTML = '<option value="">- Select Database -</option>';
+        const sec = document.getElementById('nrdb-db-section');
+        if (sec) sec.style.display = 'none';
     }
 
     function loadNrdbDatabases() {
@@ -928,6 +1006,7 @@ const target = {
                 opt.value = db; opt.textContent = db;
                 sel.appendChild(opt);
             });
+            document.getElementById('nrdb-db-section').style.display = '';
         })
         .catch(err => alert(`Failed to load databases: ${err}`))
         .finally(() => { btn.disabled = false; btn.textContent = 'Load Databases'; });
@@ -942,6 +1021,7 @@ const target = {
             row.classList.remove('table-active');
             document.getElementById('restore-nrdb-connect').style.display = 'none';
             resNrdbDbiPanel?.refreshButtons();
+            updateRestoreNrdbNcpUI();
             return;
         }
         document.querySelectorAll('tr.restore-nrdb-row.table-active').forEach(r => r.classList.remove('table-active'));
@@ -966,6 +1046,7 @@ const target = {
         // 행 선택 시 Region 셀렉트를 인스턴스 region과 대소문자 무시로 동기화 (auto-select)
         autoSelectRegion(restoreNrdbAllRows, d.instanceId, document.getElementById('targetRegionSelect'));
         resNrdbDbiPanel?.refreshButtons();
+        updateRestoreNrdbNcpUI();
     }
 
     function resetNrdbTable() {
@@ -973,7 +1054,7 @@ const target = {
         selectedRestoreNrdbInstance = null;
         stopRestoreNrdbPoll();
         const tbody = document.getElementById('restore-nrdb-table-body');
-        if (tbody) tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted small py-3">Select a credential and region to list instances</td></tr>';
+        if (tbody) tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted small py-3">Select a credential and region to list instances</td></tr>';
         document.getElementById('restore-nrdb-pagination').innerHTML = '';
         document.getElementById('restore-nrdb-connect').style.display = 'none';
         document.getElementById('restore-nrdb-gcp-instanceId').value = '';
@@ -991,7 +1072,7 @@ const target = {
         if (!provider || provider === 'none' || !region || region === 'none') { stopRestoreNrdbPoll(); return; }
 
         const tbody = document.getElementById('restore-nrdb-table-body');
-        if (tbody) tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted small py-3"><span class="spinner-border spinner-border-sm me-2"></span>Loading...</td></tr>';
+        if (tbody) tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted small py-3"><span class="spinner-border spinner-border-sm me-2"></span>Loading...</td></tr>';
         selectedRestoreNrdbInstance = null;
         document.getElementById('restore-nrdb-connect').style.display = 'none';
 
@@ -1006,6 +1087,15 @@ const target = {
     }
 
     document.getElementById('nrdbms-search')?.addEventListener('input', () => { restoreNrdbPage = 1; renderRestoreNrdbTable(); });
+
+    // NCP: 콘솔에서 Public 도메인 활성화 후 Host 1회 재조회 (폴링 아님) — 선택 보존 위해 refreshRestoreNrdbData 사용
+    document.getElementById('refresh-host-btn')?.addEventListener('click', async function () {
+        if (!selectedRestoreNrdbInstance) return;
+        this.disabled = true;
+        this.innerHTML = '<span class="spinner-border spinner-border-sm" role="status"></span>';
+        try { await refreshRestoreNrdbData(); }
+        finally { this.disabled = false; this.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i>Refresh Host'; }
+    });
 
     // ── NoSQL Username 규칙 (provider별) ───────────────────
     // aws/gcp는 모든 문자 허용 → 제약 없음. alibaba=root만, ncp=admin/root 금지
@@ -1043,4 +1133,137 @@ const target = {
     target.provider.addEventListener('change', () => { if (target.service.value === 'nrdbms') refreshNrdbUsernameUI(); });
     target.cred.addEventListener('change', () => { if (target.service.value === 'nrdbms') setTimeout(refreshNrdbUsernameUI, 0); });
 
+</script>
+
+<!-- ── Backup List (조회/삭제) 모듈 — 기존 스크립트/폼 무변경, additive. Restore는 조회 + 삭제(생성 없음). ── -->
+<script>
+(function () {
+    'use strict';
+    // 백엔드 백업 카탈로그 API — []models.BackupRecord 반환 (PascalCase 키).
+    const BACKUP_API = {
+        objectstorage: '/backup/objectstorage',
+        rdbms:         '/backup/rdbms',
+        nrdbms:        '/backup/nrdbms',
+    };
+    const SERVICE_BY_TAB = { 'Object Storage': 'objectstorage', 'SQL Database': 'rdbms', 'No-SQL': 'nrdbms' };
+    const PAGE_SIZE = 10;
+    let rows = [], page = 1, selected = null, deleteModal = null, currentService = 'objectstorage';
+
+    const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g,
+        c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+    function statusBadge(status) {
+        const s = (status || '').toLowerCase();
+        if (s === 'completed')   return `<span class="text-success small"><i class="bi bi-check-circle-fill me-1"></i>completed</span>`;
+        if (s === 'failed')      return `<span class="text-danger small"><i class="bi bi-x-circle-fill me-1"></i>failed</span>`;
+        if (s === 'in_progress') return `<span class="text-primary small"><i class="bi bi-hourglass-split ic-spin me-1"></i>in progress</span>`;
+        return `<span class="text-muted small">${esc(s || '-')}</span>`;
+    }
+
+    function load(service) {
+        currentService = service;
+        const url = BACKUP_API[service] || BACKUP_API.objectstorage;
+        const tbody = document.getElementById('backup-table-body');
+        tbody.innerHTML = '<tr><td colspan="9" class="text-center py-3"><span class="spinner-border spinner-border-sm"></span></td></tr>';
+        selected = null; page = 1; syncPath(); updateDeleteBtn();
+        fetch(url)
+            .then(r => r.ok ? r.json() : Promise.reject(r.status))
+            .then(json => { rows = Array.isArray(json) ? json : []; render(); })
+            .catch(err => { console.error('BackupList.load:', err); rows = []; render(); });
+    }
+
+    function applyFilter() {
+        const q = (document.getElementById('backup-search').value || '').toLowerCase();
+        return q ? rows.filter(b => (b.backupName || '').toLowerCase().includes(q)) : rows;
+    }
+
+    function renderPag(total) {
+        renderPagination(document.getElementById('backup-pagination'),
+            Math.ceil(total / PAGE_SIZE) || 1, page,
+            p => { page = p; render(); });
+    }
+
+    function makeRow(b) {
+        const isSel = selected && selected.id === b.id;
+        return `<tr class="backup-row${isSel ? ' table-active' : ''}" style="cursor:pointer;"
+                    data-id="${esc(b.id || '')}" data-name="${esc(b.backupName || '')}">
+                    <td class="text-center align-middle"><input type="checkbox" class="form-check-input"${isSel ? ' checked' : ''}></td>
+                    <td class="small">${esc(b.backupName || '-')}</td>
+                    <td class="small">${esc(b.provider || '-')}</td>
+                    <td class="small">${esc(b.region || '-')}</td>
+                    <td class="small">${esc(b.instanceId || '-')}</td>
+                    <td class="small">${esc(b.instanceName || '-')}</td>
+                    <td class="small">${b.databaseName ? esc(b.databaseName) : '-'}</td>
+                    <td>${statusBadge(b.status)}</td>
+                    <td class="small">${formatKstDate(b.createdAt)}</td>
+                </tr>`;
+    }
+
+    function render() {
+        const filtered = applyFilter();
+        const start = (page - 1) * PAGE_SIZE;
+        const pageRows = filtered.slice(start, start + PAGE_SIZE);
+        const tbody = document.getElementById('backup-table-body');
+        tbody.innerHTML = pageRows.length
+            ? pageRows.map(makeRow).join('')
+            : '<tr><td colspan="9" class="text-center text-muted small py-3">No backups found</td></tr>';
+        tbody.querySelectorAll('.backup-row').forEach(row =>
+            row.addEventListener('click', () => onRowClick(row)));
+        renderPag(filtered.length);
+    }
+
+    function onRowClick(row) {
+        const id = row.dataset.id;
+        selected = (selected && selected.id === id) ? null : { id, name: row.dataset.name };
+        syncPath();
+        render(); updateDeleteBtn();
+    }
+
+    // 선택한 Backup ID를 제출 계약(sourcePoint[backupId])에 반영 — 선택 해제/재조회 시 비움
+    function syncPath() {
+        const pathEl = document.getElementById('mig-linux-path');
+        if (pathEl) pathEl.value = selected ? selected.id : '';
+    }
+
+    function updateDeleteBtn() {
+        document.getElementById('backup-deleteBtn').disabled = !selected;
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        deleteModal = new bootstrap.Modal(document.getElementById('backupDeleteModal'));
+        document.getElementById('backup-search').addEventListener('input', () => { page = 1; render(); });
+        const delInput = document.getElementById('backup-delete-input');
+        document.getElementById('backup-deleteBtn').addEventListener('click', () => {
+            if (!selected) return;
+            document.getElementById('backup-delete-name').textContent = selected.name || selected.id;
+            deleteModal.show();
+        });
+        // instance 삭제와 동일 UX: backup name을 정확히 입력해야 Delete 활성화
+        document.getElementById('backupDeleteModal').addEventListener('show.bs.modal', () => {
+            delInput.value = '';
+            document.getElementById('backup-delete-error').classList.add('d-none');
+            document.getElementById('backup-delete-confirm').disabled = true;
+        });
+        delInput.addEventListener('input', function () {
+            if (!selected) return;
+            const match = this.value === (selected.name || '');
+            document.getElementById('backup-delete-error').classList.toggle('d-none', !this.value || match);
+            document.getElementById('backup-delete-confirm').disabled = !match;
+        });
+        document.getElementById('backup-delete-confirm').addEventListener('click', () => {
+            if (!selected) return;
+            const confirmBtn = document.getElementById('backup-delete-confirm');
+            confirmBtn.disabled = true;
+            // DELETE /backup/{id} — 카탈로그 엔트리 + 디스크 파일 삭제. 성공 시 목록 재조회.
+            fetch(`/backup/${selected.id}`, { method: 'DELETE' })
+                .then(r => r.ok ? r.json() : r.json().catch(() => ({})).then(e => Promise.reject(e.error || `HTTP ${r.status}`)))
+                .then(() => { deleteModal.hide(); load(currentService); })
+                .catch(err => { alert('Failed to delete backup: ' + err); confirmBtn.disabled = false; });
+        });
+        // 기존 탭 핸들러는 그대로 두고 별도 리스너만 추가 (additive): 탭 전환 시 목록도 재조회
+        document.querySelectorAll('#serviceTabs .nav-link').forEach(tab =>
+            tab.addEventListener('click', () => load(SERVICE_BY_TAB[tab.textContent.trim()] || 'objectstorage')));
+        load('objectstorage'); // 기본 활성 탭
+    });
+})();
 </script>
