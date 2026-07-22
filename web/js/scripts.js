@@ -1015,8 +1015,12 @@ window.instanceStatusBadge = function (status) {
     if (s === 'available') {
         return `<span class="text-success small"><i class="bi bi-check-circle-fill me-1"></i>available</span>`;
     }
+    // 삭제 진행/완료: 둘 다 빨간색(text-danger)으로 통일. deleting=진행 스피너, deleted=휴지통 아이콘.
     if (s === 'deleting') {
         return `<span class="text-danger small"><span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>deleting</span>`;
+    }
+    if (s === 'deleted') {
+        return `<span class="text-danger small"><i class="bi bi-trash3-fill me-1"></i>deleted</span>`;
     }
     if (s === 'failed') {
         return `<span class="text-danger small"><i class="bi bi-x-circle-fill me-1"></i>failed</span>`;
