@@ -39,7 +39,7 @@ import (
 //	@Router			/backup/objectstorage [post]
 func BackupOSPostHandler(ctx echo.Context) error {
 	start := time.Now()
-	logger, logstrings := pageLogInit(ctx, "Bakcup", "Bakcup Objectstorage", start)
+	logger, logstrings := pageLogInit(ctx, "Backup", "Backup Objectstorage", start)
 
 	var req models.BackupObjectStorageRequest
 	if err := ctx.Bind(&req); err != nil {
@@ -92,7 +92,7 @@ func BackupOSPostHandler(ctx echo.Context) error {
 		return ctx.JSON(http.StatusInternalServerError, models.BasicResponse{Result: logstrings.String(), Error: &errStr})
 	}
 
-	jobEnd(logger, "Successfully Bakcup data", start)
+	jobEnd(logger, "Successfully Backup data", start)
 	return ctx.JSON(http.StatusOK, models.BasicResponse{Result: logstrings.String(), Error: nil})
 }
 
@@ -110,7 +110,7 @@ func BackupOSPostHandler(ctx echo.Context) error {
 //	@Router			/backup/rdbms [post]
 func BackupRDBPostHandler(ctx echo.Context) error {
 	start := time.Now()
-	logger, logstrings := pageLogInit(ctx, "Bakcup", "Bakcup RDBMS", start)
+	logger, logstrings := pageLogInit(ctx, "Backup", "Backup RDBMS", start)
 
 	var req models.BackupRDBRequest
 	if err := ctx.Bind(&req); err != nil {
@@ -163,7 +163,7 @@ func BackupRDBPostHandler(ctx echo.Context) error {
 		return ctx.JSON(http.StatusInternalServerError, models.BasicResponse{Result: logstrings.String(), Error: &errStr})
 	}
 
-	jobEnd(logger, "Successfully Bakcup data", start)
+	jobEnd(logger, "Successfully Backup data", start)
 	return ctx.JSON(http.StatusOK, models.BasicResponse{Result: logstrings.String(), Error: nil})
 }
 
@@ -181,7 +181,7 @@ func BackupRDBPostHandler(ctx echo.Context) error {
 //	@Router			/backup/nrdbms [post]
 func BackupNRDBPostHandler(ctx echo.Context) error {
 	start := time.Now()
-	logger, logstrings := pageLogInit(ctx, "Bakcup", "Bakcup NRDBMS", start)
+	logger, logstrings := pageLogInit(ctx, "Backup", "Backup NRDBMS", start)
 
 	var req models.BackupNRDBRequest
 	if err := ctx.Bind(&req); err != nil {
@@ -238,7 +238,7 @@ func BackupNRDBPostHandler(ctx echo.Context) error {
 		return ctx.JSON(http.StatusInternalServerError, models.BasicResponse{Result: logstrings.String(), Error: &errStr})
 	}
 
-	jobEnd(logger, "Successfully Bakcup data", start)
+	jobEnd(logger, "Successfully Backup data", start)
 	return ctx.JSON(http.StatusOK, models.BasicResponse{Result: logstrings.String(), Error: nil})
 }
 
