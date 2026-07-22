@@ -58,6 +58,7 @@ func ObjectstorageBucketsHandler(ctx echo.Context) error {
 
 	objectStorages, err := OSC.BucketList(filterKey, filterVal)
 	if err != nil {
+		log.Error().Msgf("BucketList error (nsId=%s, provider=%s): %v", utils.GetNsId(), params.TargetPoint.Provider, err)
 		return ctx.JSON(http.StatusInternalServerError, models.ObjectStorageListResponse{
 			ObjectStorage: []models.ObjectStorage{},
 		})

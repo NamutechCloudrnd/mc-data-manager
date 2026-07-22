@@ -637,7 +637,7 @@ func (m *FileScheduleManager) RunTasks(tasks []models.BasicDataTask) {
 		}
 		task.Status = GetExecTracker().track(
 			metaFromTask(task.ServiceType, task.TaskType, task),
-			func() models.Status { return handleTask(task.ServiceType, task.TaskType, task) },
+			func() (models.Status, error) { return handleTask(task.ServiceType, task.TaskType, task) },
 		)
 		log.Debug().Msgf("status : %v", task.Status)
 		m.updateTaskStatus(task)
@@ -661,7 +661,7 @@ func (m *FileScheduleManager) RunTaskOnce(task models.DataTask, traceID ...strin
 		meta.TraceID = traceID[0]
 	}
 	task.Status = GetExecTracker().track(meta,
-		func() models.Status { return handleTask(task.ServiceType, task.TaskType, task.BasicDataTask) },
+		func() (models.Status, error) { return handleTask(task.ServiceType, task.TaskType, task.BasicDataTask) },
 	)
 	m.updateTaskStatus(task.BasicDataTask)
 
@@ -690,70 +690,75 @@ func (m *FileScheduleManager) hasDuplicateOperationID(operationID string) bool {
 }
 
 // handleTask is a function that processes a task based on its ServiceType and TaskType.
-func handleTask(serviceType models.CloudServiceType, taskType models.TaskType, params models.BasicDataTask) models.Status {
+func handleTask(serviceType models.CloudServiceType, taskType models.TaskType, params models.BasicDataTask) (models.Status, error) {
 
 	var taskStatus models.Status
+	var taskErr error
 
 	switch serviceType {
 
 	case "objectstorage":
 		switch taskType {
 		case "generate":
-			taskStatus = handleObjectStorageGenerateTask(params)
+			taskStatus, taskErr = handleObjectStorageGenerateTask(params)
 		case "migrate":
-			taskStatus = handleObjectStorageMigrateTask(params)
+			taskStatus, taskErr = handleObjectStorageMigrateTask(params)
 		case "backup":
-			taskStatus = handleObjectStorageBackupTask(params)
+			taskStatus, taskErr = handleObjectStorageBackupTask(params)
 		case "restore":
-			taskStatus = handleObjectStorageRestoreTask(params)
+			taskStatus, taskErr = handleObjectStorageRestoreTask(params)
 		case "delete":
-			taskStatus = handleObjectStorageDeleteTask(params)
+			taskStatus, taskErr = handleObjectStorageDeleteTask(params)
 		default:
-			log.Error().Msgf("Error: Unknown TaskType: %s for ServiceType: %s\n", taskType, serviceType)
+			taskErr = fmt.Errorf("unknown TaskType: %s for ServiceType: %s", taskType, serviceType)
+			log.Error().Msg(taskErr.Error())
 			taskStatus = models.StatusFailed
 		}
 	case "rdbms":
 		switch taskType {
 		case "generate":
-			taskStatus = handleRDBMSGenerateTask(params)
+			taskStatus, taskErr = handleRDBMSGenerateTask(params)
 		case "migrate":
-			taskStatus = handleRDBMSMigrateTask(params)
+			taskStatus, taskErr = handleRDBMSMigrateTask(params)
 		case "backup":
-			taskStatus = handleRDBMSBackupTask(params)
+			taskStatus, taskErr = handleRDBMSBackupTask(params)
 		case "restore":
-			taskStatus = handleRDBMSRestoreTask(params)
+			taskStatus, taskErr = handleRDBMSRestoreTask(params)
 		case "delete":
-			taskStatus = handleRDBMSDeleteTask(params)
+			taskStatus, taskErr = handleRDBMSDeleteTask(params)
 		default:
-			log.Error().Msgf("Error: Unknown TaskType: %s for ServiceType: %s\n", taskType, serviceType)
+			taskErr = fmt.Errorf("unknown TaskType: %s for ServiceType: %s", taskType, serviceType)
+			log.Error().Msg(taskErr.Error())
 			taskStatus = models.StatusFailed
 		}
 	case "nrdbms":
 		switch taskType {
 		case "generate":
-			taskStatus = handleNRDBMSGenerateTask(params)
+			taskStatus, taskErr = handleNRDBMSGenerateTask(params)
 		case "migrate":
-			taskStatus = handleNRDBMSMigrateTask(params)
+			taskStatus, taskErr = handleNRDBMSMigrateTask(params)
 		case "backup":
-			taskStatus = handleNRDBMSBackupTask(params)
+			taskStatus, taskErr = handleNRDBMSBackupTask(params)
 		case "restore":
-			taskStatus = handleNRDBMSRestoreTask(params)
+			taskStatus, taskErr = handleNRDBMSRestoreTask(params)
 		case "delete":
-			taskStatus = handleNRDBMSDeleteTask(params)
+			taskStatus, taskErr = handleNRDBMSDeleteTask(params)
 		default:
-			log.Error().Msgf("Error: Unknown TaskType: %s for ServiceType: %s\n", taskType, serviceType)
+			taskErr = fmt.Errorf("unknown TaskType: %s for ServiceType: %s", taskType, serviceType)
+			log.Error().Msg(taskErr.Error())
 			taskStatus = models.StatusFailed
 		}
 	default:
-		log.Error().Msgf("Error: Unknown ServiceType: %s\n", serviceType)
+		taskErr = fmt.Errorf("unknown ServiceType: %s", serviceType)
+		log.Error().Msg(taskErr.Error())
 		taskStatus = models.StatusFailed
 
 	}
 
-	return taskStatus
+	return taskStatus, taskErr
 }
 
-func handleObjectStorageGenerateTask(params models.BasicDataTask) models.Status {
+func handleObjectStorageGenerateTask(params models.BasicDataTask) (models.Status, error) {
 
 	var OSC *osc.OSController
 	var err error
@@ -761,7 +766,7 @@ func handleObjectStorageGenerateTask(params models.BasicDataTask) models.Status 
 	OSC, err = auth.GetOS(&params.TargetPoint)
 	if err != nil {
 		log.Error().Msgf("OSController error importing into objectstorage : %v", err)
-		return models.StatusFailed
+		return models.StatusFailed, err
 	}
 
 	log.Info().Msgf("Launch OSController MPut")
@@ -769,13 +774,13 @@ func handleObjectStorageGenerateTask(params models.BasicDataTask) models.Status 
 		log.Error().Err(err).Msgf("MPut error importing into objectstorage")
 		log.Info().Msgf("params : %+v", params.Dummy)
 
-		return models.StatusFailed
+		return models.StatusFailed, err
 	}
 	log.Info().Msgf("successfully imported : %s", params.Dummy.DummyPath)
-	return models.StatusCompleted
+	return models.StatusCompleted, nil
 }
 
-func handleObjectStorageDeleteTask(params models.BasicDataTask) models.Status {
+func handleObjectStorageDeleteTask(params models.BasicDataTask) (models.Status, error) {
 
 	var OSC *osc.OSController
 	var err error
@@ -783,20 +788,20 @@ func handleObjectStorageDeleteTask(params models.BasicDataTask) models.Status {
 	OSC, err = auth.GetOS(&params.TargetPoint)
 	if err != nil {
 		log.Error().Msgf("OSController error importing into objectstorage : %v", err)
-		return models.StatusFailed
+		return models.StatusFailed, err
 	}
 
 	log.Info().Msgf("Launch OSController Delete")
 	if err := OSC.DeleteBucket(); err != nil {
 		log.Error().Msgf("Delete error deleting into objectstorage : %v", err)
-		return models.StatusFailed
+		return models.StatusFailed, err
 	}
 	log.Info().Msgf("successfully deleted")
 
-	return models.StatusCompleted
+	return models.StatusCompleted, nil
 }
 
-func handleObjectStorageMigrateTask(params models.BasicDataTask) models.Status {
+func handleObjectStorageMigrateTask(params models.BasicDataTask) (models.Status, error) {
 	log.Info().Msg("Handling object storage migrate task")
 
 	var src *osc.OSController
@@ -808,19 +813,19 @@ func handleObjectStorageMigrateTask(params models.BasicDataTask) models.Status {
 	src, srcErr = auth.GetOS(&params.SourcePoint)
 	if srcErr != nil {
 		log.Error().Err(srcErr).Msg("OSController error migration into object storage")
-		return models.StatusFailed
+		return models.StatusFailed, srcErr
 	}
 	log.Info().Msg("Target Information")
 	dst, dstErr = auth.GetOS(&params.TargetPoint)
 	if dstErr != nil {
 		log.Error().Err(dstErr).Msg("OSController error migration into object storage")
-		return models.StatusFailed
+		return models.StatusFailed, dstErr
 	}
 
 	flt, err := filtering.FromParams(params.SourceFilter)
 	if err != nil {
 		log.Error().Err(err).Msg("invalid sourceFilter")
-		return models.StatusFailed
+		return models.StatusFailed, err
 	}
 
 	if flt == nil {
@@ -859,13 +864,13 @@ func handleObjectStorageMigrateTask(params models.BasicDataTask) models.Status {
 	log.Info().Msg("Launch OSController Copy")
 	if err := src.Copy(dst, flt); err != nil {
 		log.Error().Err(err).Msg("Copy error copying into object storage")
-		return models.StatusFailed
+		return models.StatusFailed, err
 	}
 	log.Info().Msg("Successfully migrated")
-	return models.StatusCompleted
+	return models.StatusCompleted, nil
 }
 
-func handleObjectStorageBackupTask(params models.BasicDataTask) models.Status {
+func handleObjectStorageBackupTask(params models.BasicDataTask) (models.Status, error) {
 	log.Info().Msg("Handling object storage backup task")
 	var OSC *osc.OSController
 	var err error
@@ -873,25 +878,25 @@ func handleObjectStorageBackupTask(params models.BasicDataTask) models.Status {
 	OSC, err = auth.GetOS(&params.SourcePoint)
 	if err != nil {
 		log.Error().Err(err).Msg("OSController error importing into objectstorage ")
-		return models.StatusFailed
+		return models.StatusFailed, err
 	}
 
 	flt, err := filtering.FromParams(params.SourceFilter)
 	if err != nil {
 		log.Error().Err(err).Msg("invalid sourceFilter")
-		return models.StatusFailed
+		return models.StatusFailed, err
 	}
 
 	log.Info().Msg("Launch OSController MGet")
 	if err := OSC.MGet(params.TargetPoint.Path, flt); err != nil {
 		log.Error().Err(err).Msg("MGet error exporting into objectstorage ")
-		return models.StatusFailed
+		return models.StatusFailed, err
 	}
 	log.Info().Msgf("successfully backup : %s", params.TargetPoint.Path)
-	return models.StatusCompleted
+	return models.StatusCompleted, nil
 }
 
-func handleObjectStorageRestoreTask(params models.BasicDataTask) models.Status {
+func handleObjectStorageRestoreTask(params models.BasicDataTask) (models.Status, error) {
 	log.Info().Msg("Handling object storage restore task")
 	var OSC *osc.OSController
 	var err error
@@ -899,26 +904,26 @@ func handleObjectStorageRestoreTask(params models.BasicDataTask) models.Status {
 	OSC, err = auth.GetOS(&params.TargetPoint)
 	if err != nil {
 		log.Error().Err(err).Msg("OSController error importing into objectstorage ")
-		return models.StatusFailed
+		return models.StatusFailed, err
 	}
 
 	log.Info().Msg("Launch OSController MGet")
 	if err := OSC.MPut(params.SourcePoint.Path); err != nil {
 		log.Error().Err(err).Msg("MPut error importing into objectstorage ")
-		return models.StatusFailed
+		return models.StatusFailed, err
 	}
 	log.Info().Msgf("successfully restore : %s", params.SourcePoint.Path)
-	return models.StatusCompleted
+	return models.StatusCompleted, nil
 }
 
-func handleRDBMSGenerateTask(params models.BasicDataTask) models.Status {
+func handleRDBMSGenerateTask(params models.BasicDataTask) (models.Status, error) {
 	var RDBC *rdbc.RDBController
 	var err error
 	log.Info().Msgf("User Information")
 	RDBC, err = auth.GetRDMS(&params.TargetPoint)
 	if err != nil {
 		log.Error().Msgf("RDBController error importing into rdbms : %v", err)
-		return models.StatusFailed
+		return models.StatusFailed, err
 	}
 
 	sqlList := []string{}
@@ -933,52 +938,52 @@ func handleRDBMSGenerateTask(params models.BasicDataTask) models.Status {
 	})
 	if err != nil {
 		log.Error().Msgf("Walk error : %v", err)
-		return models.StatusFailed
+		return models.StatusFailed, err
 	}
 
 	for _, sqlPath := range sqlList {
 		data, err := os.ReadFile(sqlPath)
 		if err != nil {
 			log.Error().Msgf("ReadFile error : %v", err)
-			return models.StatusFailed
+			return models.StatusFailed, err
 		}
 		log.Info().Msgf("Import start: %s", sqlPath)
 		if err := RDBC.Put(string(data)); err != nil {
 			log.Error().Msgf("Put error importing into rdbms: %v", err)
-			return models.StatusFailed
+			return models.StatusFailed, err
 		}
 		log.Info().Msgf("Import success: %s", sqlPath)
 	}
 	log.Info().Msgf("successfully imported : %s", params.Dummy.DummyPath)
-	return models.StatusCompleted
+	return models.StatusCompleted, nil
 }
 
-func handleRDBMSDeleteTask(params models.BasicDataTask) models.Status {
+func handleRDBMSDeleteTask(params models.BasicDataTask) (models.Status, error) {
 	var RDBC *rdbc.RDBController
 	var err error
 	RDBC, err = auth.GetRDMS(&params.TargetPoint)
 
 	if err != nil {
 		log.Error().Msgf("RDBController error deleting into rdbms : %v", err)
-		return models.StatusFailed
+		return models.StatusFailed, err
 	}
 
 	var dbList []string
 	if err := RDBC.ListDB(&dbList); err != nil {
 		log.Error().Err(err).Msgf("ListDB error : %s", err)
-		return models.StatusFailed
+		return models.StatusFailed, err
 	}
 
 	log.Info().Msgf("Launch RDBController Delete")
 	if err := RDBC.DeleteDB(dbList...); err != nil {
 		log.Error().Msgf("Delete error deleting into rdbms : %v", err)
-		return models.StatusFailed
+		return models.StatusFailed, err
 	}
 	log.Info().Msgf("successfully deleted")
-	return models.StatusCompleted
+	return models.StatusCompleted, nil
 }
 
-func handleRDBMSMigrateTask(params models.BasicDataTask) models.Status {
+func handleRDBMSMigrateTask(params models.BasicDataTask) (models.Status, error) {
 	log.Info().Msg("Handling RDBMS migrate task")
 	var srcRDBC *rdbc.RDBController
 	var srcErr error
@@ -988,26 +993,26 @@ func handleRDBMSMigrateTask(params models.BasicDataTask) models.Status {
 	srcRDBC, srcErr = auth.GetRDMS(&params.SourcePoint)
 	if srcErr != nil {
 		log.Error().Err(srcErr).Msg("RDBController error migration into rdbms ")
-		return models.StatusFailed
+		return models.StatusFailed, srcErr
 	}
 	log.Info().Msg("Target Information")
 	dstRDBC, dstErr = auth.GetRDMS(&params.TargetPoint)
 	if dstErr != nil {
 		log.Error().Err(dstErr).Msg("RDBController error migration into rdbms ")
-		return models.StatusFailed
+		return models.StatusFailed, dstErr
 	}
 
 	log.Info().Msg("Launch RDBController Copy")
 	if err := srcRDBC.Copy(dstRDBC, params.SourcePoint.DatabaseName); err != nil {
 		log.Error().Err(err).Msg("Copy error copying into rdbms ")
-		return models.StatusFailed
+		return models.StatusFailed, err
 	}
 	log.Info().Msg("successfully migrationed")
-	return models.StatusCompleted
+	return models.StatusCompleted, nil
 
 }
 
-func handleRDBMSBackupTask(params models.BasicDataTask) models.Status {
+func handleRDBMSBackupTask(params models.BasicDataTask) (models.Status, error) {
 	log.Info().Msg("Handling RDBMS backup task")
 	var RDBC *rdbc.RDBController
 	var err error
@@ -1015,25 +1020,25 @@ func handleRDBMSBackupTask(params models.BasicDataTask) models.Status {
 	RDBC, err = auth.GetRDMS(&params.SourcePoint)
 	if err != nil {
 		log.Error().Err(err).Msg("RDBController error importing into rdbms ")
-		return models.StatusFailed
+		return models.StatusFailed, err
 	}
 
 	err = os.MkdirAll(params.TargetPoint.Path, 0755)
 	if err != nil {
 		log.Error().Err(err).Msg("MkdirAll error ")
-		return models.StatusFailed
+		return models.StatusFailed, err
 	}
 
 	dbList := []string{}
 	if err := RDBC.ListDB(&dbList); err != nil {
 		log.Error().Err(err).Msg("ListDB error ")
-		return models.StatusFailed
+		return models.StatusFailed, err
 	}
 
 	sourceDB := params.SourcePoint.DatabaseName
 	if !slices.Contains(dbList, sourceDB) {
 		log.Error().Msgf("database %q not found in server", sourceDB)
-		return models.StatusFailed
+		return models.StatusFailed, fmt.Errorf("database %q not found in server", sourceDB)
 	}
 	dbList = []string{sourceDB}
 
@@ -1043,30 +1048,30 @@ func handleRDBMSBackupTask(params models.BasicDataTask) models.Status {
 		log.Info().Msgf("Export start: %s", db)
 		if err := RDBC.Get(db, &sqlData); err != nil {
 			log.Error().Err(err).Msg("Get error ")
-			return models.StatusFailed
+			return models.StatusFailed, err
 		}
 
 		file, err := os.Create(filepath.Join(params.TargetPoint.Path, fmt.Sprintf("%s.sql", db)))
 		if err != nil {
 			log.Error().Err(err).Msg("File create error ")
-			return models.StatusFailed
+			return models.StatusFailed, err
 		}
 		defer file.Close()
 
 		_, err = file.WriteString(sqlData)
 		if err != nil {
 			log.Error().Err(err).Msg("File write error ")
-			return models.StatusFailed
+			return models.StatusFailed, err
 		}
 		log.Info().Msgf("successfully exported : %s", file.Name())
 		file.Close()
 	}
 	log.Info().Msgf("successfully backup : %s", params.TargetPoint.Path)
-	return models.StatusCompleted
+	return models.StatusCompleted, nil
 
 }
 
-func handleRDBMSRestoreTask(params models.BasicDataTask) models.Status {
+func handleRDBMSRestoreTask(params models.BasicDataTask) (models.Status, error) {
 	log.Info().Msg("Handling RDBMS restore task")
 	var RDBC *rdbc.RDBController
 	var err error
@@ -1074,7 +1079,7 @@ func handleRDBMSRestoreTask(params models.BasicDataTask) models.Status {
 	RDBC, err = auth.GetRDMS(&params.TargetPoint)
 	if err != nil {
 		log.Error().Err(err).Msg("RDBController error importing into rdbms ")
-		return models.StatusFailed
+		return models.StatusFailed, err
 	}
 
 	sqlList := []string{}
@@ -1089,35 +1094,35 @@ func handleRDBMSRestoreTask(params models.BasicDataTask) models.Status {
 	})
 	if err != nil {
 		log.Error().Err(err).Msg("Walk error ")
-		return models.StatusFailed
+		return models.StatusFailed, err
 	}
 
 	for _, sqlPath := range sqlList {
 		data, err := os.ReadFile(sqlPath)
 		if err != nil {
 			log.Error().Err(err).Msg("ReadFile error ")
-			return models.StatusFailed
+			return models.StatusFailed, err
 		}
 		log.Info().Msgf("Import start: %s", sqlPath)
 		if err := RDBC.Put(string(data)); err != nil {
 			log.Error().Msgf("Put error importing into rdbms: %v", err)
-			return models.StatusFailed
+			return models.StatusFailed, err
 		}
 		log.Info().Msgf("Import success: %s", sqlPath)
 	}
 	log.Info().Msgf("successfully restore : %s", params.SourcePoint.Path)
-	return models.StatusCompleted
+	return models.StatusCompleted, nil
 
 }
 
-func handleNRDBMSGenerateTask(params models.BasicDataTask) models.Status {
+func handleNRDBMSGenerateTask(params models.BasicDataTask) (models.Status, error) {
 
 	var NRDBC *nrdbc.NRDBController
 	var err error
 	NRDBC, err = auth.GetNRDMS(&params.TargetPoint)
 	if err != nil {
 		log.Error().Msgf("NRDBController error importing into nrdbms : %v", err)
-		return models.StatusFailed
+		return models.StatusFailed, err
 	}
 
 	jsonList := []string{}
@@ -1133,7 +1138,7 @@ func handleNRDBMSGenerateTask(params models.BasicDataTask) models.Status {
 
 	if err != nil {
 		log.Error().Msgf("Walk error : %v", err)
-		return models.StatusFailed
+		return models.StatusFailed, err
 	}
 
 	var srcData []map[string]interface{}
@@ -1143,13 +1148,13 @@ func handleNRDBMSGenerateTask(params models.BasicDataTask) models.Status {
 		file, err := os.Open(jsonFile)
 		if err != nil {
 			log.Error().Msgf("file open error : %v", err)
-			return models.StatusFailed
+			return models.StatusFailed, err
 		}
 		defer file.Close()
 
 		if err := json.NewDecoder(file).Decode(&srcData); err != nil {
 			log.Error().Msgf("file decoding error : %v", err)
-			return models.StatusFailed
+			return models.StatusFailed, err
 		}
 
 		fileName := filepath.Base(jsonFile)
@@ -1158,14 +1163,14 @@ func handleNRDBMSGenerateTask(params models.BasicDataTask) models.Status {
 		log.Info().Msgf("Import start: %s", fileName)
 		if err := NRDBC.Put(tableName, &srcData); err != nil {
 			log.Error().Msgf("Put error importing into nrdbms: %v", err)
-			return models.StatusFailed
+			return models.StatusFailed, err
 		}
 		log.Info().Msgf("successfully imported : %s", params.Dummy.DummyPath)
 	}
-	return models.StatusCompleted
+	return models.StatusCompleted, nil
 }
 
-func handleNRDBMSDeleteTask(params models.BasicDataTask) models.Status {
+func handleNRDBMSDeleteTask(params models.BasicDataTask) (models.Status, error) {
 
 	var NRDBC *nrdbc.NRDBController
 	var err error
@@ -1173,26 +1178,26 @@ func handleNRDBMSDeleteTask(params models.BasicDataTask) models.Status {
 
 	if err != nil {
 		log.Error().Msgf("NRDBController error deleting into nrdbms : %v", err)
-		return models.StatusFailed
+		return models.StatusFailed, err
 	}
 
 	tbList, err := NRDBC.ListTables()
 	if err != nil {
 		log.Error().Err(err).Msgf("ListTable error : %s", err)
-		return models.StatusFailed
+		return models.StatusFailed, err
 	}
 
 	log.Info().Msgf("Launch NRDBController Delete")
 	if err := NRDBC.DeleteTables(tbList...); err != nil {
 		log.Error().Msgf("Delete error deleting into nrdbms : %v", err)
-		return models.StatusFailed
+		return models.StatusFailed, err
 	}
 	log.Info().Msgf("successfully deleted")
 
-	return models.StatusCompleted
+	return models.StatusCompleted, nil
 }
 
-func handleNRDBMSMigrateTask(params models.BasicDataTask) models.Status {
+func handleNRDBMSMigrateTask(params models.BasicDataTask) (models.Status, error) {
 	log.Info().Msg("Handling NRDBMS migrate task")
 	var srcNRDBC *nrdbc.NRDBController
 	var srcErr error
@@ -1202,40 +1207,40 @@ func handleNRDBMSMigrateTask(params models.BasicDataTask) models.Status {
 	srcNRDBC, srcErr = auth.GetNRDMS(&params.SourcePoint)
 	if srcErr != nil {
 		log.Error().Err(srcErr).Msg("NRDBController error migration into nrdbms ")
-		return models.StatusFailed
+		return models.StatusFailed, srcErr
 	}
 	log.Info().Msg("Target Information")
 	dstNRDBC, dstErr = auth.GetNRDMS(&params.TargetPoint)
 	if dstErr != nil {
 		log.Error().Err(dstErr).Msg("NRDBController error migration into nrdbms ")
-		return models.StatusFailed
+		return models.StatusFailed, dstErr
 	}
 
 	log.Info().Msg("Launch NRDBController Copy")
 	if err := srcNRDBC.Copy(dstNRDBC); err != nil {
 		log.Error().Err(err).Msg("Copy error copying into nrdbms ")
-		return models.StatusFailed
+		return models.StatusFailed, err
 	}
 	log.Info().Msg("successfully migrationed")
-	return models.StatusCompleted
+	return models.StatusCompleted, nil
 
 }
 
 // S -> T
-func handleNRDBMSBackupTask(params models.BasicDataTask) models.Status {
+func handleNRDBMSBackupTask(params models.BasicDataTask) (models.Status, error) {
 	log.Info().Msg("Handling NRDBMS backup task")
 	var NRDBC *nrdbc.NRDBController
 	var err error
 	NRDBC, err = auth.GetNRDMS(&params.SourcePoint)
 	if err != nil {
 		log.Error().Err(err).Msg("NRDBController error importing into nrdbms ")
-		return models.StatusFailed
+		return models.StatusFailed, err
 	}
 
 	tableList, err := NRDBC.ListTables()
 	if err != nil {
 		log.Info().Msgf("ListTables error : %v", err)
-		return models.StatusFailed
+		return models.StatusFailed, err
 	}
 
 	if !utils.DirExists(params.TargetPoint.Path) {
@@ -1244,7 +1249,7 @@ func handleNRDBMSBackupTask(params models.BasicDataTask) models.Status {
 		err = os.MkdirAll(params.TargetPoint.Path, 0755)
 		if err != nil {
 			log.Info().Msgf("Make Failed 0755 : %s", params.TargetPoint.Path)
-			return models.StatusFailed
+			return models.StatusFailed, err
 		}
 	}
 
@@ -1255,13 +1260,13 @@ func handleNRDBMSBackupTask(params models.BasicDataTask) models.Status {
 
 		if err := NRDBC.Get(table, &dstData); err != nil {
 			log.Error().Err(err).Msg("Get error ")
-			return models.StatusFailed
+			return models.StatusFailed, err
 		}
 
 		file, err := os.Create(filepath.Join(params.TargetPoint.Path, fmt.Sprintf("%s.json", table)))
 		if err != nil {
 			log.Error().Err(err).Msg("File create error ")
-			return models.StatusFailed
+			return models.StatusFailed, err
 		}
 		defer file.Close()
 
@@ -1269,24 +1274,24 @@ func handleNRDBMSBackupTask(params models.BasicDataTask) models.Status {
 		encoder.SetIndent("", "    ")
 		if err := encoder.Encode(dstData); err != nil {
 			log.Error().Err(err).Msg("data encoding error ")
-			return models.StatusFailed
+			return models.StatusFailed, err
 		}
 		log.Info().Msgf("successfully create File : %s", file.Name())
 	}
 	log.Info().Msgf("successfully backup to : %s", params.TargetPoint.Path)
-	return models.StatusCompleted
+	return models.StatusCompleted, nil
 
 }
 
 // Restore S -> T
-func handleNRDBMSRestoreTask(params models.BasicDataTask) models.Status {
+func handleNRDBMSRestoreTask(params models.BasicDataTask) (models.Status, error) {
 	log.Info().Msg("Handling NRDBMS restore task")
 	var NRDBC *nrdbc.NRDBController
 	var err error
 	NRDBC, err = auth.GetNRDMS(&params.TargetPoint)
 	if err != nil {
 		log.Error().Err(err).Msg("NRDBController error importing into nrdbms ")
-		return models.StatusFailed
+		return models.StatusFailed, err
 	}
 
 	jsonList := []string{}
@@ -1302,7 +1307,7 @@ func handleNRDBMSRestoreTask(params models.BasicDataTask) models.Status {
 
 	if err != nil {
 		log.Error().Err(err).Msg("Walk error ")
-		return models.StatusFailed
+		return models.StatusFailed, err
 	}
 
 	var srcData []map[string]interface{}
@@ -1312,13 +1317,13 @@ func handleNRDBMSRestoreTask(params models.BasicDataTask) models.Status {
 		file, err := os.Open(jsonFile)
 		if err != nil {
 			log.Error().Err(err).Msg("file open error ")
-			return models.StatusFailed
+			return models.StatusFailed, err
 		}
 		defer file.Close()
 
 		if err := json.NewDecoder(file).Decode(&srcData); err != nil {
 			log.Error().Err(err).Msg("file decoding error ")
-			return models.StatusFailed
+			return models.StatusFailed, err
 		}
 
 		fileName := filepath.Base(jsonFile)
@@ -1327,11 +1332,11 @@ func handleNRDBMSRestoreTask(params models.BasicDataTask) models.Status {
 		log.Info().Msgf("Import start: %s", fileName)
 		if err := NRDBC.Put(tableName, &srcData); err != nil {
 			log.Error().Msgf("Put error importing into nrdbms: %v", err)
-			return models.StatusFailed
+			return models.StatusFailed, err
 		}
 		log.Info().Msgf("successfully Restore : %s, %s", params.SourcePoint.Path, fileName)
 	}
-	return models.StatusCompleted
+	return models.StatusCompleted, nil
 
 }
 

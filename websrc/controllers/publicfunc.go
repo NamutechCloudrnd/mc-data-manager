@@ -46,6 +46,7 @@ import (
 	"github.com/cloud-barista/mc-data-manager/service/nrdbc"
 	"github.com/cloud-barista/mc-data-manager/service/osc"
 	"github.com/cloud-barista/mc-data-manager/service/rdbc"
+	"github.com/cloud-barista/mc-data-manager/service/task"
 	"github.com/labstack/echo/v4"
 	"github.com/rs/zerolog"
 	"github.com/spf13/cast"
@@ -65,6 +66,15 @@ func traceIDFromCtx(c echo.Context) string {
 		}
 	}
 	return ""
+}
+
+// taskErrMsg returns the real task failure cause recorded for this request
+// (looked up by traceId), falling back to the given message if none was set.
+func taskErrMsg(c echo.Context, fallback string) string {
+	if m := task.GetExecTracker().LastError(traceIDFromCtx(c)); m != "" {
+		return m
+	}
+	return fallback
 }
 
 // func pageLogInit(c echo.Context, pageName, pageInfo string, startTime time.Time) (*zerolog.Logger, *strings.Builder) {

@@ -80,9 +80,10 @@ func GenerateObjectStoragePostHandler(ctx echo.Context) error {
 	manager := task.GetFileScheduleManager()
 
 	if !manager.RunTaskOnce(params, traceIDFromCtx(ctx)) {
+		errStr := taskErrMsg(ctx, "task failed")
 		return ctx.JSON(http.StatusInternalServerError, models.BasicResponse{
 			Result: logstrings.String(),
-			Error:  nil,
+			Error:  &errStr,
 		})
 	}
 
@@ -146,9 +147,10 @@ func GenerateRDBMSPostHandler(ctx echo.Context) error {
 	manager := task.GetFileScheduleManager()
 
 	if !manager.RunTaskOnce(params, traceIDFromCtx(ctx)) {
+		errStr := taskErrMsg(ctx, "task failed")
 		return ctx.JSON(http.StatusInternalServerError, models.BasicResponse{
 			Result: logstrings.String(),
-			Error:  nil,
+			Error:  &errStr,
 		})
 	}
 
@@ -213,9 +215,10 @@ func GenerateNRDBMSPostHandler(ctx echo.Context) error {
 	manager := task.GetFileScheduleManager()
 
 	if !manager.RunTaskOnce(params, traceIDFromCtx(ctx)) {
+		errStr := taskErrMsg(ctx, "task failed")
 		return ctx.JSON(http.StatusInternalServerError, models.BasicResponse{
 			Result: logstrings.String(),
-			Error:  nil,
+			Error:  &errStr,
 		})
 	}
 

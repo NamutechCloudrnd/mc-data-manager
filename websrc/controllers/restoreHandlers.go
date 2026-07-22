@@ -80,9 +80,10 @@ func RestoreOSPostHandler(ctx echo.Context) error {
 	manager := task.GetFileScheduleManager()
 
 	if !manager.RunTaskOnce(params, traceIDFromCtx(ctx)) {
+		errStr := taskErrMsg(ctx, "task failed")
 		return ctx.JSON(http.StatusInternalServerError, models.BasicResponse{
 			Result: logstrings.String(),
-			Error:  nil,
+			Error:  &errStr,
 		})
 	}
 	// backup success. Send result to client
@@ -141,13 +142,18 @@ func RestoreRDBPostHandler(ctx echo.Context) error {
 	params.TargetPoint.Provider = req.TargetPoint.Provider
 	params.TargetPoint.Region = req.TargetPoint.Region
 	params.TargetPoint.MySQLParams = req.TargetPoint.MySQLParams
+	// restored DB name for the execution log (informational; restore replays the dump).
+	if record.DatabaseName != nil {
+		params.TargetPoint.DatabaseName = *record.DatabaseName
+	}
 	params.SourcePoint.Path = record.Path
 
 	manager := task.GetFileScheduleManager()
 	if !manager.RunTaskOnce(params, traceIDFromCtx(ctx)) {
+		errStr := taskErrMsg(ctx, "task failed")
 		return ctx.JSON(http.StatusInternalServerError, models.BasicResponse{
 			Result: logstrings.String(),
-			Error:  nil,
+			Error:  &errStr,
 		})
 	}
 
@@ -214,9 +220,10 @@ func RestoreNRDBPostHandler(ctx echo.Context) error {
 
 	manager := task.GetFileScheduleManager()
 	if !manager.RunTaskOnce(params, traceIDFromCtx(ctx)) {
+		errStr := taskErrMsg(ctx, "task failed")
 		return ctx.JSON(http.StatusInternalServerError, models.BasicResponse{
 			Result: logstrings.String(),
-			Error:  nil,
+			Error:  &errStr,
 		})
 	}
 

@@ -88,7 +88,7 @@ func BackupOSPostHandler(ctx echo.Context) error {
 	}
 	record.Status = status
 	if !success {
-		errStr := "backup failed"
+		errStr := taskErrMsg(ctx, "backup failed")
 		return ctx.JSON(http.StatusInternalServerError, models.BasicResponse{Result: logstrings.String(), Error: &errStr})
 	}
 
@@ -159,7 +159,7 @@ func BackupRDBPostHandler(ctx echo.Context) error {
 	}
 	record.Status = status
 	if !success {
-		errStr := "backup failed"
+		errStr := taskErrMsg(ctx, "backup failed")
 		return ctx.JSON(http.StatusInternalServerError, models.BasicResponse{Result: logstrings.String(), Error: &errStr})
 	}
 
@@ -234,7 +234,7 @@ func BackupNRDBPostHandler(ctx echo.Context) error {
 	}
 	record.Status = status
 	if !success {
-		errStr := "backup failed"
+		errStr := taskErrMsg(ctx, "backup failed")
 		return ctx.JSON(http.StatusInternalServerError, models.BasicResponse{Result: logstrings.String(), Error: &errStr})
 	}
 
