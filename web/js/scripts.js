@@ -742,45 +742,8 @@ function applyFilter(jsonData) {
 }
 
 function backUpFormSubmit() {
-    const form = document.getElementById('backForm');
-
-    form.addEventListener('submit', (e) => {
-        e.preventDefault();
-
-        const payload = new FormData(form);
-        let jsonData = formDataToObject(payload)
-
-        const provider = document.getElementById('sourcePoint[provider]').value;
-        const service = document.getElementById('srcService').value;
-        if(service != "rdbms" && jsonData.sourcePoint.credentialId == "none") {
-            alert("credential not selected");
-            return
-        }
-        if(service == "objectstorage" && (jsonData.sourcePoint.bucket == "none" || jsonData.sourcePoint.bucket == "-" || jsonData.sourcePoint.bucket == "")) {
-            alert("please select bucket");
-            return
-        }        
-        if(service == "objectstorage") {
-            applyFilter(jsonData)
-        } else {
-            delete jsonData.sourceFilter;
-        }
-        loadingButtonOn();
-        resultCollpase();
-
-        let url = "/backup/" + service;
-
-        jsonData.sourcePoint.credentialId = parseInt(jsonData.sourcePoint.credentialId);
-        jsonData.sourcePoint.provider = provider
-
-        if (service == "objectstorage") {
-            ensureEndpoint(jsonData.sourcePoint);
-        }
-
-        TaskProgress.submit('backup', url, jsonData);
-    });
-
-    TaskProgress.attach('backup');   // 복귀 시 1회 조회로 복원
+    // 백업 생성 submit은 back-backup.html 인라인(BackupList 모듈)이 직접 처리한다
+    // (스펙 형태 POST /backup/{service} + 결과를 Result 패널에 표시).
 }
 
 function RestoreFormSubmit() {
@@ -1885,11 +1848,22 @@ const InstancePanel = (() => {
         document.addEventListener('click', e => {
             if (!refs.icWrapper.contains(e.target)) icClose();
         });
-        // 중복 Instance ID: is-invalid + invalid-feedback로 표시 (storage와 동일 패턴)
+        // Instance ID 검증: 중복 + provider별 형식(NCP 8자). invalid/valid 피드백 표시.
         refs.instanceId.addEventListener('input', () => {
+            const v = refs.instanceId.value.trim();
+            const fmtErr = active ? instanceIdError(active.getProvider(), v) : '';
             const dup = instanceIdDup();
-            refs.instanceId.classList.toggle('is-invalid', dup);
-            refs.instanceId.closest('.form-floating').classList.toggle('is-invalid', dup);
+            const errMsg = dup ? 'This instance ID already exists.' : fmtErr;
+            const bad = !!errMsg;
+            const errEl = document.getElementById('dbi-instanceId-error');
+            if (errEl && errMsg) errEl.textContent = errMsg;
+            const fl = refs.instanceId.closest('.form-floating');
+            refs.instanceId.classList.toggle('is-invalid', bad);
+            fl.classList.toggle('is-invalid', bad);
+            // 8자 이상일 때만 valid(초록) 처리. valid-feedback 문구는 없음('Looks good' 미표시)
+            const valid = !bad && v.length >= 8;
+            refs.instanceId.classList.toggle('is-valid', valid);
+            fl.classList.toggle('is-valid', valid);
             updateCreateBtn();
         });
         // gen-mysql/gen-no-sql과 동일: is-invalid + invalid-feedback로 표시
@@ -2013,8 +1987,8 @@ const InstancePanel = (() => {
         // 폼 초기화 + provider별 규칙
         resetSelect(r.engine); resetSelect(r.version); icReset();
         r.instanceId.value = '';
-        r.instanceId.classList.remove('is-invalid');
-        r.instanceId.closest('.form-floating').classList.remove('is-invalid');
+        r.instanceId.classList.remove('is-invalid', 'is-valid');
+        r.instanceId.closest('.form-floating').classList.remove('is-invalid', 'is-valid');
         r.username.value = '';
         r.password.value = '';
         ['dbi-username-error', 'dbi-password-error'].forEach(id => {
@@ -2062,6 +2036,17 @@ const InstancePanel = (() => {
         const v = refs.instanceId.value.trim();
         if (!v || !active?.getRows) return false;
         return (active.getRows() || []).some(i => i.instanceId === v || i.name === v);
+    }
+
+    // provider별 Instance ID 형식 검증 (오류 메시지 반환, 없으면 '').
+    // NCP: 서버가 생성 시 '-{랜덤6자}' 접미사를 붙이고 CSP 이름 상한이 15자라, 이름은 8자 이하만 허용.
+    function instanceIdError(provider, value) {
+        const v = (value || '').trim();
+        if (!v) return '';
+        if ((provider || '').toLowerCase() === 'ncp' && v.length > 8) {
+            return 'For NCP, use 8 characters or fewer (a unique suffix is added on creation).';
+        }
+        return '';
     }
 
     async function loadEngineVersions() {
@@ -2211,6 +2196,7 @@ const InstancePanel = (() => {
         const pw = refs.password.value;
         const ok = refs.instanceId.value.trim()
             && !instanceIdDup()
+            && !instanceIdError(provider, refs.instanceId.value)
             && refs.version.value
             && refs.klass.value
             && storageOk

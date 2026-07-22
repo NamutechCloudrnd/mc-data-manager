@@ -29,8 +29,8 @@
                         <label for="sourcePointLabel">Source</label>
                     </div>
                 </div>
-                <!-- Path 입력 UI 삭제. 제출 계약(sourcePoint[path])은 hidden으로 보존 (백엔드 무변경). -->
-                <input type="hidden" id="mig-linux-path" name="sourcePoint[path]" value="/tmp/dummy">
+                <!-- 선택한 Backup의 ID를 제출 계약(sourcePoint[backupId])으로 전달. 목록에서 백업 선택 시 채워짐. -->
+                <input type="hidden" id="mig-linux-path" name="sourcePoint[backupId]" value="">
                 <!-- ── Backup List (조회/삭제) — Source 위치. Restore는 조회 + 삭제. ── -->
                 <div class="d-flex justify-content-between align-items-center mb-3">
                     <span class="text-muted small fw-semibold">Backup List</span>
@@ -147,10 +147,22 @@
                             <button type="button" class="btn btn-danger btn-sm" id="res-rdbms-deleteBtn" disabled>
                                 <i class="bi bi-trash3 me-1"></i>Delete
                             </button>
+                            <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="refresh-endpoint-btn" title="Reload the latest Host">
+                                <i class="bi bi-arrow-clockwise me-1"></i>Refresh Host
+                            </button>
                             <button type="button" class="btn btn-primary btn-sm" id="res-rdbms-createBtn" disabled>
                                 <i class="bi bi-plus-lg me-1"></i>Instance
                             </button>
                         </div>
+                    </div>
+
+                    <!-- NCP Public Domain guide — 선택 인스턴스 Host가 아직 사설이면 표시, Refresh Host로 재조회 -->
+                    <div id="ncp-pub-guide" class="alert alert-info py-2 px-3 mb-3 small d-none">
+                        <div class="fw-semibold mb-1"><i class="bi bi-info-circle-fill me-1"></i>NCP Public Domain</div>
+                        A Public Domain must be enabled in the NCP Console to connect from outside.<br>
+                        Open the <a href="https://console.ncloud.com/vpcCloudMysql/server" target="_blank" rel="noopener noreferrer" class="fw-semibold">NCP Console &#8599;</a>, select the instance, and go to
+                        <strong>DB Management &gt; Public Domain Management</strong>.<br>
+                        After it is assigned, click <strong>Refresh Host</strong> to load the latest Host.
                     </div>
                     <table class="table table-bordered table-sm mb-0">
                         <thead>
@@ -217,10 +229,22 @@
                                 <button type="button" class="btn btn-danger btn-sm" id="res-nrdb-deleteBtn" disabled>
                                     <i class="bi bi-trash3 me-1"></i>Delete
                                 </button>
+                                <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="refresh-host-btn" title="Reload the latest Host">
+                                    <i class="bi bi-arrow-clockwise me-1"></i>Refresh Host
+                                </button>
                                 <button type="button" class="btn btn-primary btn-sm" id="res-nrdb-createBtn" disabled>
                                     <i class="bi bi-plus-lg me-1"></i>Instance
                                 </button>
                             </div>
+                        </div>
+
+                        <!-- NCP Public Domain guide (MongoDB) — 선택 인스턴스 Host가 아직 사설이면 표시, Refresh Host로 재조회 -->
+                        <div id="ncp-pub-guide-nrdb" class="alert alert-info py-2 px-3 mb-3 small d-none">
+                            <div class="fw-semibold mb-1"><i class="bi bi-info-circle-fill me-1"></i>NCP Public Domain</div>
+                            A Public Domain must be enabled in the NCP Console to connect from outside.<br>
+                            Open the <a href="https://console.ncloud.com/" target="_blank" rel="noopener noreferrer" class="fw-semibold">NCP Console &#8599;</a> and go to
+                            <strong>Cloud DB for MongoDB &gt; DB Management &gt; Public Domain Management</strong>.<br>
+                            After it is assigned, click <strong>Refresh Host</strong> to load the latest Host.
                         </div>
                         <table class="table table-bordered table-sm mb-0">
                             <thead>
@@ -670,6 +694,46 @@ const target = {
             p => { restoreRdbmsPage = p; renderRestoreRdbmsTable(); });
     }
 
+    // ── NCP Public Domain (RDBMS) — gen-mysql 이식. nrdbms와 id/함수명 분리 ──
+    // 재조회로 선택 인스턴스 endpoint/port가 갱신되면 선택 상태·Host/Port 입력에 반영 (Refresh Host용)
+    function reconcileSelectedRestoreRdbms() {
+        if (!selectedRestoreInstance) return;
+        const cur = restoreRdbmsAllRows.find(i => i.instanceId === selectedRestoreInstance.instanceId);
+        if (!cur) return;
+        selectedRestoreInstance.endpoint = cur.endpoint;
+        selectedRestoreInstance.port = cur.port;
+        const h = document.getElementById('mysql-srcHost'); if (h && !h.disabled) h.value = cur.endpoint || '';
+        const p = document.getElementById('mysql-srcPort'); if (p && !p.disabled) p.value = cur.port || '';
+    }
+    // Host가 접속 가능한 상태인지 (ncp/alibaba: 공인 'pub' 도메인 필요)
+    function isRestoreRdbmsHostReady(endpoint, provider) {
+        const host = endpoint || '';
+        const p = (provider || document.getElementById('targetPoint[provider]')?.value || '').toLowerCase();
+        if (p === 'alibaba' || p === 'ncp') return host.includes('pub');
+        return !!host;
+    }
+    // NCP + 선택 인스턴스 Host가 아직 사설이면 가이드 표시, 선택 시 Refresh Host 노출
+    function updateRestoreRdbmsNcpUI() {
+        const provider = document.getElementById('targetPoint[provider]')?.value || '';
+        const target = (provider === 'ncp' && selectedRestoreInstance) ? selectedRestoreInstance : null;
+        const needsPublic = !!target && !isRestoreRdbmsHostReady(target.endpoint, 'ncp');
+        document.getElementById('ncp-pub-guide').classList.toggle('d-none', !needsPublic);
+        document.getElementById('refresh-endpoint-btn').classList.toggle('d-none', !target);
+    }
+    // Refresh Host용 재조회 — loadRdbmsTable과 달리 선택을 비우지 않는다 (선택 인스턴스 Host 갱신)
+    function refreshRestoreRdbData() {
+        const provider = document.getElementById('targetPoint[provider]')?.value || '';
+        const region   = getTargetRegion();
+        if (!provider || provider === 'none' || !region || region === 'none') return;
+        return fetch('/db/rdbms', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ provider, region })
+        })
+        .then(r => r.ok ? r.json() : Promise.reject(r.status))
+        .then(json => { restoreRdbmsAllRows = json || []; renderRestoreRdbmsTable(); resRdbmsDbiPanel?.refreshButtons(); })
+        .catch(err => console.error('refreshRestoreRdbData:', err));
+    }
+
     function renderRestoreRdbmsTable() {
         const tbody = document.getElementById('restore-rdbms-table-body');
         if (!tbody) return;
@@ -680,6 +744,8 @@ const target = {
         if (!filtered.length) {
             tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted small py-3">No instances found</td></tr>';
             renderRestoreRdbmsPagination(0);
+            reconcileSelectedRestoreRdbms();
+            updateRestoreRdbmsNcpUI();
             return;
         }
         const start = (restoreRdbmsPage - 1) * RESTORE_PAGE_SIZE;
@@ -705,6 +771,8 @@ const target = {
             });
         });
         renderRestoreRdbmsPagination(totalPages);
+        reconcileSelectedRestoreRdbms();
+        updateRestoreRdbmsNcpUI();
     }
 
     function applyRestoreRdbmsSelection() {
@@ -719,6 +787,7 @@ const target = {
             document.getElementById('restore-rdbms-connect').style.display = 'none';
         }
         resRdbmsDbiPanel?.refreshButtons();
+        updateRestoreRdbmsNcpUI();
     }
 
     // Region 셀렉트를 인스턴스의 region과 대소문자 무시로 동기화.
@@ -753,6 +822,15 @@ const target = {
 
     document.getElementById('rdbms-search')?.addEventListener('input', () => { restoreRdbmsPage = 1; renderRestoreRdbmsTable(); });
 
+    // NCP: 콘솔에서 Public 도메인 활성화 후 Host 1회 재조회 (폴링 아님) — 선택 보존 위해 refreshRestoreRdbData 사용
+    document.getElementById('refresh-endpoint-btn')?.addEventListener('click', async function () {
+        if (!selectedRestoreInstance) return;
+        this.disabled = true;
+        this.innerHTML = '<span class="spinner-border spinner-border-sm" role="status"></span>';
+        try { await refreshRestoreRdbData(); }
+        finally { this.disabled = false; this.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i>Refresh Host'; }
+    });
+
     // ── NRDBMS (NoSQL) instance table: 조회 전용 ────────────────
     let restoreNrdbAllRows = [], restoreNrdbPage = 1;
     let selectedRestoreNrdbInstance = null;
@@ -777,13 +855,39 @@ const target = {
         const provider = document.getElementById('targetPoint[provider]')?.value || '';
         const region   = getTargetRegion();
         if (target.service.value !== 'nrdbms' || !provider || provider === 'none' || !region || region === 'none') { stopRestoreNrdbPoll(); return; }
-        fetch('/db/nrdbms', {
+        return fetch('/db/nrdbms', {
             method: 'POST', headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ provider, region })
         })
         .then(r => r.ok ? r.json() : Promise.reject(r.status))
         .then(json => { restoreNrdbAllRows = json || []; renderRestoreNrdbTable(); resNrdbDbiPanel?.refreshButtons(); scheduleRestoreNrdbPoll(); })
         .catch(() => { scheduleRestoreNrdbPoll(); });
+    }
+
+    // ── NCP Public Domain (MongoDB) — gen-no-sql 이식 ──
+    // 재조회로 선택 인스턴스 endpoint/port가 갱신되면 선택 상태·Host/Port 입력에 반영 (Refresh Host용)
+    function reconcileSelectedRestoreNrdb() {
+        if (!selectedRestoreNrdbInstance) return;
+        const cur = restoreNrdbAllRows.find(i => i.instanceId === selectedRestoreNrdbInstance.instanceId);
+        if (!cur) return;
+        selectedRestoreNrdbInstance.endpoint = cur.endpoint;
+        selectedRestoreNrdbInstance.port = cur.port;
+        const h = document.getElementById('nosql-srcHost'); if (h && !h.disabled) h.value = cur.endpoint || '';
+        const p = document.getElementById('nosql-srcPort'); if (p && !p.disabled) p.value = cur.port || '';
+    }
+    // Host가 접속 가능한 상태인지 (ncp/alibaba MongoDB: 공인 'pub' 도메인 필요)
+    function isRestoreNrdbHostReady(endpoint, provider) {
+        const p = (provider || document.getElementById('targetPoint[provider]')?.value || '').toLowerCase();
+        if (p === 'alibaba' || p === 'ncp') return (endpoint || '').includes('pub');
+        return true; // aws(서버리스)/gcp(Firestore)는 endpoint 개념 없음
+    }
+    // NCP + 선택 인스턴스 Host가 아직 사설이면 가이드 표시, 선택 시 Refresh Host 노출
+    function updateRestoreNrdbNcpUI() {
+        const provider = document.getElementById('targetPoint[provider]')?.value || '';
+        const target = (provider === 'ncp' && selectedRestoreNrdbInstance) ? selectedRestoreNrdbInstance : null;
+        const needsPublic = !!target && !isRestoreNrdbHostReady(target.endpoint, 'ncp');
+        document.getElementById('ncp-pub-guide-nrdb').classList.toggle('d-none', !needsPublic);
+        document.getElementById('refresh-host-btn').classList.toggle('d-none', !target);
     }
 
     function makeRestoreNrdbRow(inst) {
@@ -826,6 +930,8 @@ const target = {
         if (!filtered.length) {
             tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted small py-3">No instances found</td></tr>';
             renderRestoreNrdbPagination(1);
+            reconcileSelectedRestoreNrdb();
+            updateRestoreNrdbNcpUI();
             return;
         }
         const start = (restoreNrdbPage - 1) * RESTORE_PAGE_SIZE;
@@ -834,6 +940,8 @@ const target = {
             row.addEventListener('click', () => onRestoreNrdbRowClick(row));
         });
         renderRestoreNrdbPagination(totalPages);
+        reconcileSelectedRestoreNrdb();
+        updateRestoreNrdbNcpUI();
     }
 
     // provider별 접속 필드 표시/제출 제어 (gen-no-sql과 동일 규칙).
@@ -913,6 +1021,7 @@ const target = {
             row.classList.remove('table-active');
             document.getElementById('restore-nrdb-connect').style.display = 'none';
             resNrdbDbiPanel?.refreshButtons();
+            updateRestoreNrdbNcpUI();
             return;
         }
         document.querySelectorAll('tr.restore-nrdb-row.table-active').forEach(r => r.classList.remove('table-active'));
@@ -937,6 +1046,7 @@ const target = {
         // 행 선택 시 Region 셀렉트를 인스턴스 region과 대소문자 무시로 동기화 (auto-select)
         autoSelectRegion(restoreNrdbAllRows, d.instanceId, document.getElementById('targetRegionSelect'));
         resNrdbDbiPanel?.refreshButtons();
+        updateRestoreNrdbNcpUI();
     }
 
     function resetNrdbTable() {
@@ -977,6 +1087,15 @@ const target = {
     }
 
     document.getElementById('nrdbms-search')?.addEventListener('input', () => { restoreNrdbPage = 1; renderRestoreNrdbTable(); });
+
+    // NCP: 콘솔에서 Public 도메인 활성화 후 Host 1회 재조회 (폴링 아님) — 선택 보존 위해 refreshRestoreNrdbData 사용
+    document.getElementById('refresh-host-btn')?.addEventListener('click', async function () {
+        if (!selectedRestoreNrdbInstance) return;
+        this.disabled = true;
+        this.innerHTML = '<span class="spinner-border spinner-border-sm" role="status"></span>';
+        try { await refreshRestoreNrdbData(); }
+        finally { this.disabled = false; this.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i>Refresh Host'; }
+    });
 
     // ── NoSQL Username 규칙 (provider별) ───────────────────
     // aws/gcp는 모든 문자 허용 → 제약 없음. alibaba=root만, ncp=admin/root 금지
@@ -1020,16 +1139,15 @@ const target = {
 <script>
 (function () {
     'use strict';
-    // mock: 백엔드 미구현 → 정적 JSON을 /res(=./web)에서 직접 fetch.
-    // 실데이터 연동 시 URL을 GET /backup/{service}로 교체.
-    const BACKUP_MOCK = {
-        objectstorage: '/res/mock/backup-objectstorage.json',
-        rdbms:         '/res/mock/backup-rdbms.json',
-        nrdbms:        '/res/mock/backup-nrdbms.json',
+    // 백엔드 백업 카탈로그 API — []models.BackupRecord 반환 (PascalCase 키).
+    const BACKUP_API = {
+        objectstorage: '/backup/objectstorage',
+        rdbms:         '/backup/rdbms',
+        nrdbms:        '/backup/nrdbms',
     };
     const SERVICE_BY_TAB = { 'Object Storage': 'objectstorage', 'SQL Database': 'rdbms', 'No-SQL': 'nrdbms' };
     const PAGE_SIZE = 10;
-    let rows = [], page = 1, selected = null, deleteModal = null;
+    let rows = [], page = 1, selected = null, deleteModal = null, currentService = 'objectstorage';
 
     const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g,
         c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -1043,10 +1161,11 @@ const target = {
     }
 
     function load(service) {
-        const url = BACKUP_MOCK[service] || BACKUP_MOCK.objectstorage;
+        currentService = service;
+        const url = BACKUP_API[service] || BACKUP_API.objectstorage;
         const tbody = document.getElementById('backup-table-body');
         tbody.innerHTML = '<tr><td colspan="9" class="text-center py-3"><span class="spinner-border spinner-border-sm"></span></td></tr>';
-        selected = null; page = 1; updateDeleteBtn();
+        selected = null; page = 1; syncPath(); updateDeleteBtn();
         fetch(url)
             .then(r => r.ok ? r.json() : Promise.reject(r.status))
             .then(json => { rows = Array.isArray(json) ? json : []; render(); })
@@ -1096,7 +1215,14 @@ const target = {
     function onRowClick(row) {
         const id = row.dataset.id;
         selected = (selected && selected.id === id) ? null : { id, name: row.dataset.name };
+        syncPath();
         render(); updateDeleteBtn();
+    }
+
+    // 선택한 Backup ID를 제출 계약(sourcePoint[backupId])에 반영 — 선택 해제/재조회 시 비움
+    function syncPath() {
+        const pathEl = document.getElementById('mig-linux-path');
+        if (pathEl) pathEl.value = selected ? selected.id : '';
     }
 
     function updateDeleteBtn() {
@@ -1126,10 +1252,13 @@ const target = {
         });
         document.getElementById('backup-delete-confirm').addEventListener('click', () => {
             if (!selected) return;
-            // [임시 — mock] 정적 JSON이라 서버 반영 불가 → 로컬 제거만.
-            // 실데이터 연동 시: fetch(`/backup/${selected.id}`, { method: 'DELETE' }) 후 load(현재 service).
-            rows = rows.filter(b => b.id !== selected.id);
-            selected = null; deleteModal.hide(); render(); updateDeleteBtn();
+            const confirmBtn = document.getElementById('backup-delete-confirm');
+            confirmBtn.disabled = true;
+            // DELETE /backup/{id} — 카탈로그 엔트리 + 디스크 파일 삭제. 성공 시 목록 재조회.
+            fetch(`/backup/${selected.id}`, { method: 'DELETE' })
+                .then(r => r.ok ? r.json() : r.json().catch(() => ({})).then(e => Promise.reject(e.error || `HTTP ${r.status}`)))
+                .then(() => { deleteModal.hide(); load(currentService); })
+                .catch(err => { alert('Failed to delete backup: ' + err); confirmBtn.disabled = false; });
         });
         // 기존 탭 핸들러는 그대로 두고 별도 리스너만 추가 (additive): 탭 전환 시 목록도 재조회
         document.querySelectorAll('#serviceTabs .nav-link').forEach(tab =>
