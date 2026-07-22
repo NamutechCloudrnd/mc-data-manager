@@ -2280,9 +2280,8 @@ const InstancePanel = (() => {
         const inst = panel.getSelected && panel.getSelected();
         if (!inst) return;
         deleteCtx = { panel, instanceId: inst.instanceId, name: inst.name || inst.instanceId };
-        document.getElementById('dbi-delete-name').textContent = inst.instanceId;
-        document.getElementById('dbi-delete-instruction').textContent =
-            'To delete this instance, enter its Name: ' + deleteCtx.name;
+        // Object Storage(버킷) 삭제 팝업과 동일 규칙: ID가 아니라 Name을 표시하고 Name으로 검증한다
+        document.getElementById('dbi-delete-name').textContent = deleteCtx.name;
         r.deleteModal.show();
     }
 
