@@ -160,7 +160,8 @@ func InitServer(port string, addIP ...string) *echo.Echo {
 		&models.Credential{},
 		&models.RDBInstanceRecord{},
 		&models.NRDBInstanceRecord{},
-		&models.BackupRecord{},	
+		&models.BackupRecord{},
+		&models.ExecutionLog{},
 	); err != nil {
 		log.Error().Msgf("Failed to migrate database: %v", err)
 	}

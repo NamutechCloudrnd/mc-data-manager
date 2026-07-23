@@ -57,10 +57,11 @@ func MigrationObjectstoragePostHandler(ctx echo.Context) error {
 	params.TaskMeta.ServiceType = models.ObejectStorage
 	manager := task.GetFileScheduleManager()
 
-	if !manager.RunTaskOnce(params) {
+	if !manager.RunTaskOnce(params, traceIDFromCtx(ctx)) {
+		errStr := taskErrMsg(ctx, "task failed")
 		return ctx.JSON(http.StatusInternalServerError, models.BasicResponse{
 			Result: logstrings.String(),
-			Error:  nil,
+			Error:  &errStr,
 		})
 	}
 	// migration success. Send result to client
@@ -102,10 +103,11 @@ func MigrationNRDBMSPostHandler(ctx echo.Context) error {
 	params.TaskMeta.ServiceType = models.NRDBMS
 	manager := task.GetFileScheduleManager()
 
-	if !manager.RunTaskOnce(params) {
+	if !manager.RunTaskOnce(params, traceIDFromCtx(ctx)) {
+		errStr := taskErrMsg(ctx, "task failed")
 		return ctx.JSON(http.StatusInternalServerError, models.BasicResponse{
 			Result: logstrings.String(),
-			Error:  nil,
+			Error:  &errStr,
 		})
 	}
 	// migration success. Send result to client
@@ -147,10 +149,11 @@ func MigrationRDBMSPostHandler(ctx echo.Context) error {
 	params.TaskMeta.ServiceType = models.RDBMS
 	manager := task.GetFileScheduleManager()
 
-	if !manager.RunTaskOnce(params) {
+	if !manager.RunTaskOnce(params, traceIDFromCtx(ctx)) {
+		errStr := taskErrMsg(ctx, "task failed")
 		return ctx.JSON(http.StatusInternalServerError, models.BasicResponse{
 			Result: logstrings.String(),
-			Error:  nil,
+			Error:  &errStr,
 		})
 	}
 	// migration success. Send result to client
