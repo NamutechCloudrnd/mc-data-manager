@@ -119,8 +119,9 @@
             </div>
             <div class="modal-body pt-1">
                 <p class="mb-2 small">You are about to permanently delete <strong id="dbi-delete-name"></strong>.</p>
-                <p class="mb-3 small" id="dbi-delete-instruction">To delete this instance, enter its Name.</p>
-                <input type="text" class="form-control" id="dbi-delete-input" placeholder="Name" autocomplete="off">
+                <p class="mb-2 small text-danger"><i class="bi bi-exclamation-triangle-fill me-1"></i>All data associated with this instance will also be deleted.</p>
+                <p class="mb-3 small" id="dbi-delete-instruction">To delete this instance, enter its name.</p>
+                <input type="text" class="form-control" id="dbi-delete-input" placeholder="Instance name" autocomplete="off">
                 <div id="dbi-delete-error" class="text-danger small mt-1 d-none">Name does not match.</div>
             </div>
             <div class="modal-footer">

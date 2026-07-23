@@ -1015,8 +1015,12 @@ window.instanceStatusBadge = function (status) {
     if (s === 'available') {
         return `<span class="text-success small"><i class="bi bi-check-circle-fill me-1"></i>available</span>`;
     }
+    // 삭제 진행/완료: 둘 다 빨간색(text-danger)으로 통일. deleting=진행 스피너, deleted=휴지통 아이콘.
     if (s === 'deleting') {
         return `<span class="text-danger small"><span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>deleting</span>`;
+    }
+    if (s === 'deleted') {
+        return `<span class="text-danger small"><i class="bi bi-trash3-fill me-1"></i>deleted</span>`;
     }
     if (s === 'failed') {
         return `<span class="text-danger small"><i class="bi bi-x-circle-fill me-1"></i>failed</span>`;
@@ -2280,9 +2284,8 @@ const InstancePanel = (() => {
         const inst = panel.getSelected && panel.getSelected();
         if (!inst) return;
         deleteCtx = { panel, instanceId: inst.instanceId, name: inst.name || inst.instanceId };
-        document.getElementById('dbi-delete-name').textContent = inst.instanceId;
-        document.getElementById('dbi-delete-instruction').textContent =
-            'To delete this instance, enter its Name: ' + deleteCtx.name;
+        // Object Storage(버킷) 삭제 팝업과 동일 규칙: ID가 아니라 Name을 표시하고 Name으로 검증한다
+        document.getElementById('dbi-delete-name').textContent = deleteCtx.name;
         r.deleteModal.show();
     }
 
