@@ -54,3 +54,12 @@ type ExecutionLog struct {
 func (ExecutionLog) TableName() string {
 	return "tbexecutionlog"
 }
+
+// ExecutionLogListResponse is the paginated response for GET /history.
+type ExecutionLogListResponse struct {
+	Content    []ExecutionLog `json:"content"`
+	Page       int            `json:"page"`
+	Size       int            `json:"size"`
+	TotalCount int64          `json:"totalCount"`
+	TotalPages int            `json:"totalPages"`
+}

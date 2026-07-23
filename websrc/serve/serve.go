@@ -218,6 +218,9 @@ func InitServer(port string, addIP ...string) *echo.Echo {
 	credentialGroup := e.Group("/credentials")
 	routes.CredentialRoutes(credentialGroup, config.DB)
 
+	historyGroup := e.Group("/history")
+	routes.ExecutionLogRoutes(historyGroup, config.DB)
+
 	diagnoseGroup := e.Group("/diagnose")
 	routes.DiagnoseRoutes(diagnoseGroup)
 

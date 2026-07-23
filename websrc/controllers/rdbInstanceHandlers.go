@@ -8,7 +8,9 @@ import (
 	"github.com/cloud-barista/mc-data-manager/internal/auth"
 	"github.com/cloud-barista/mc-data-manager/models"
 	rdbinstancepkg "github.com/cloud-barista/mc-data-manager/pkg/rdbinstance"
+	"github.com/cloud-barista/mc-data-manager/pkg/utils"
 	"github.com/cloud-barista/mc-data-manager/service/rdbinstance"
+	"github.com/cloud-barista/mc-data-manager/service/task"
 	"github.com/labstack/echo/v4"
 	"github.com/rs/zerolog/log"
 )
@@ -118,10 +120,24 @@ func CreateRDBInstanceHandler(c echo.Context) error {
 		AllocatedStorage: req.AllocatedStorage,
 	}
 
-	instance, err := rdbinstance.CreateInstance(c.Request().Context(), req.Provider, req.Region, spec)
-	if err != nil {
-		log.Error().Err(err).Str("provider", req.Provider).Str("instanceId", req.InstanceID).Msg("create RDB instance failed")
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	var instance models.DBInstance
+	createErr := task.GetExecTracker().Track(task.ExecMeta{
+		TraceID:     traceIDFromCtx(c),
+		NamespaceID: utils.GetNsId(),
+		ServiceType: "rdbms",
+		Operation:   "create",
+		Provider:    req.Provider,
+		Region:      req.Region,
+		Resource:    req.InstanceID,
+		Message:     "create request accepted; async provisioning completion is not tracked",
+	}, func() error {
+		var err error
+		instance, err = rdbinstance.CreateInstance(c.Request().Context(), req.Provider, req.Region, spec)
+		return err
+	})
+	if createErr != nil {
+		log.Error().Err(createErr).Str("provider", req.Provider).Str("instanceId", req.InstanceID).Msg("create RDB instance failed")
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": createErr.Error()})
 	}
 
 	return c.JSON(http.StatusOK, instance)
@@ -155,10 +171,24 @@ func DeleteRDBInstanceHandler(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "instanceId is required"})
 	}
 
-	instance, err := rdbinstance.DeleteInstance(c.Request().Context(), req.Provider, req.Region, req.InstanceID)
-	if err != nil {
-		log.Error().Err(err).Str("provider", req.Provider).Str("instanceId", req.InstanceID).Msg("delete RDB instance failed")
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	var instance models.DBInstance
+	deleteErr := task.GetExecTracker().Track(task.ExecMeta{
+		TraceID:     traceIDFromCtx(c),
+		NamespaceID: utils.GetNsId(),
+		ServiceType: "rdbms",
+		Operation:   "delete",
+		Provider:    req.Provider,
+		Region:      req.Region,
+		Resource:    req.InstanceID,
+		Message:     "delete request accepted; async completion is not tracked",
+	}, func() error {
+		var err error
+		instance, err = rdbinstance.DeleteInstance(c.Request().Context(), req.Provider, req.Region, req.InstanceID)
+		return err
+	})
+	if deleteErr != nil {
+		log.Error().Err(deleteErr).Str("provider", req.Provider).Str("instanceId", req.InstanceID).Msg("delete RDB instance failed")
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": deleteErr.Error()})
 	}
 
 	return c.JSON(http.StatusOK, instance)
