@@ -57,7 +57,7 @@
         <table class="table table-bordered table-sm table-hover mb-0">
             <thead>
                 <tr>
-                    <th style="width:48px;"></th>
+                    <th style="width:48px; text-align: center;">#</th>
                     <th>Service Type</th>
                     <th>Operation</th>
                     <th>Provider</th>
@@ -65,7 +65,13 @@
                     <th>Resource</th>
                     <th style="width:90px;">Duration</th>
                     <th style="width:90px;">Result</th>
-                    <th style="width:200px;">Finished</th>
+                    <th style="width:200px;">
+                        <span id="log-sort-finished" role="button"
+                              class="user-select-none d-inline-flex align-items-center"
+                              title="Toggle sort order">
+                            Finished <i id="log-sort-icon" class="bi bi-caret-down-fill ms-1 small"></i>
+                        </span>
+                    </th>
                 </tr>
             </thead>
             <tbody id="log-table-body">
@@ -107,6 +113,13 @@ document.addEventListener('DOMContentLoaded', function () {
 
     let rows = [];       // 현재 페이지 레코드 (행 클릭 시 상세 조회용)
     let pageOffset = 0;  // 현재 페이지의 시작 순번 오프셋 = (page-1)*size
+    let sortDir = 'desc'; // finishedAt 정렬 방향 (API sort 파라미터)
+
+    // Finished 헤더 정렬 아이콘 갱신 (desc=▼ / asc=▲)
+    const sortIcon = document.getElementById('log-sort-icon');
+    function updateSortIcon() {
+        sortIcon.className = 'bi ms-1 small ' + (sortDir === 'asc' ? 'bi-caret-up-fill' : 'bi-caret-down-fill');
+    }
 
     // ── 표시 헬퍼 (페이지 로컬) ─────────────────────────
     // result 배지 — instanceStatusBadge(scripts.js) idiom 복제
@@ -221,6 +234,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (opSel.value)   params.set('operation', opSel.value);
         if (from)          params.set('from', from);
         if (to)            params.set('to', to);
+        params.set('sort', sortDir);
 
         placeholder('Loading history…');
 
@@ -259,12 +273,21 @@ document.addEventListener('DOMContentLoaded', function () {
     document.getElementById('log-search-btn').addEventListener('click', () => loadHistory(1));
     document.getElementById('log-reset-btn').addEventListener('click', () => {
         svcSel.value = ''; opSel.value = ''; fromInp.value = ''; toInp.value = '';
+        sortDir = 'desc'; updateSortIcon();
         loadHistory(1);
     });
     [svcSel, opSel].forEach(el => el.addEventListener('change', () => loadHistory(1)));
     [fromInp, toInp].forEach(el => el.addEventListener('change', () => loadHistory(1)));
 
+    // Finished 헤더 클릭 → 정렬 방향 토글 후 1페이지부터 재조회
+    document.getElementById('log-sort-finished').addEventListener('click', () => {
+        sortDir = (sortDir === 'asc') ? 'desc' : 'asc';
+        updateSortIcon();
+        loadHistory(1);
+    });
+
     // ── 초기 로드 (필터 없음 = 최근순 첫 페이지) ─────────
+    updateSortIcon();
     loadHistory(1);
 });
 </script>
