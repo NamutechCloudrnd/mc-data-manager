@@ -49,6 +49,7 @@ func NewExecutionLogHandler(db *gorm.DB) *ExecutionLogHandler {
 //	@Param			operation	query	string	false	"generate | migrate | backup | restore | create | delete"
 //	@Param			from		query	string	false	"Period start date (YYYY-MM-DD)"
 //	@Param			to			query	string	false	"Period end date (YYYY-MM-DD)"
+//	@Param			sort		query	string	false	"asc | desc, sort by FinishedAt (default desc)"
 //	@Success		200			{object}	models.ExecutionLogListResponse
 //	@Failure		400			{object}	models.BasicResponse	"Invalid query parameter"
 //	@Failure		503			{object}	models.BasicResponse	"Execution history DB is not configured"
@@ -74,6 +75,7 @@ func (h *ExecutionLogHandler) ListExecutionLogsHandler(ctx echo.Context) error {
 		Operation:   ctx.QueryParam("operation"),
 		From:        ctx.QueryParam("from"),
 		To:          ctx.QueryParam("to"),
+		Sort:        ctx.QueryParam("sort"),
 	}
 
 	resp, err := h.historyService.ListExecutionLogs(query)

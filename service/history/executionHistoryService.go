@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/cloud-barista/mc-data-manager/models"
@@ -52,6 +53,7 @@ type ExecutionHistoryQuery struct {
 	Operation   string
 	From        string // date, YYYY-MM-DD, optional (start of that day)
 	To          string // date, YYYY-MM-DD, optional (end of that day)
+	Sort        string // "asc" | "desc", optional (default: desc)
 }
 
 type ExecutionHistoryService struct {
@@ -71,6 +73,12 @@ func (s *ExecutionHistoryService) ListExecutionLogs(q ExecutionHistoryQuery) (*m
 	if q.Operation != "" && !allowedOperations[q.Operation] {
 		return nil, fmt.Errorf("%w: operation %q is not one of generate/migrate/backup/restore/create/delete", ErrInvalidQuery, q.Operation)
 	}
+
+	sort := strings.ToLower(q.Sort)
+	if sort != "" && sort != "asc" && sort != "desc" {
+		return nil, fmt.Errorf("%w: sort %q is not one of asc/desc", ErrInvalidQuery, q.Sort)
+	}
+	desc := sort != "asc" // default desc; only "asc" flips it
 
 	var from, to *time.Time
 	if q.From != "" {
@@ -97,6 +105,7 @@ func (s *ExecutionHistoryService) ListExecutionLogs(q ExecutionHistoryQuery) (*m
 		To:          to,
 		Page:        page,
 		Size:        size,
+		Desc:        desc,
 	})
 	if err != nil {
 		return nil, err
