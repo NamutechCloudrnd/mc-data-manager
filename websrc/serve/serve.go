@@ -194,6 +194,8 @@ func InitServer(port string, addIP ...string) *echo.Echo {
 	HealthHandler := controllers.NewHealthHandler(config.DB)
 	e.GET("/readyZ", HealthHandler.GetSystemReadyHandler)
 
+	e.GET("/log-management", controllers.LogManagementHandler)
+
 	migrationGroup := e.Group("/migrate")
 	routes.MigrationRoutes(migrationGroup)
 
