@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/cloud-barista/mc-data-manager/models"
+	cam "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/cam/v20190116"
 )
 
 // providerConfig holds the warp-specific S3 addressing details for a provider.
@@ -111,4 +112,28 @@ func ResolveS3Keys(provider string, creds interface{}) (accessKey, secretKey str
 	default:
 		return "", "", fmt.Errorf("unsupported provider: %s", provider)
 	}
+}
+
+// ResolveBucketName returns the actual bucket name to use for warp/S3 calls.
+// Tencent COS bucket names must include the account's numeric AppId as a
+// "-<appid>" suffix; every other provider uses the given bucketId as-is.
+func ResolveBucketName(provider, secretId, secretKey, bucketId string) (string, error) {
+	if provider != "tencent" {
+		return bucketId, nil
+	}
+
+	client, err := cam.NewClientWithSecretId(secretId, secretKey, "")
+	if err != nil {
+		return "", fmt.Errorf("failed to create Tencent CAM client: %w", err)
+	}
+
+	resp, err := client.GetUserAppId(cam.NewGetUserAppIdRequest())
+	if err != nil {
+		return "", fmt.Errorf("failed to get Tencent AppId: %w", err)
+	}
+	if resp.Response == nil || resp.Response.AppId == nil {
+		return "", fmt.Errorf("tencent GetUserAppId returned no AppId")
+	}
+
+	return fmt.Sprintf("%s-%d", bucketId, *resp.Response.AppId), nil
 }

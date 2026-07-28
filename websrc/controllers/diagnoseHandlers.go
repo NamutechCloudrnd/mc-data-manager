@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"time"
@@ -175,32 +176,35 @@ func (d *DiagnoseHandler) PostWarpDiagnose(ctx echo.Context) error {
 	start := time.Now()
 	logger, _ := pageLogInit(ctx, "Diagnose-task", "Diagnose object storage warp", start)
 
-	task := models.WarpDiagnosticTask{}
-	if !getDataWithReBind(logger, start, ctx, &task) {
+	req := models.WarpDiagnosticRequest{}
+	if !getDataWithReBind(logger, start, ctx, &req) {
 		errStr := "Invalid request data"
 		logger.Error().Msg(errStr)
 		return ctx.JSON(http.StatusBadRequest, map[string]string{"error": errStr})
 	}
 
-	if task.Provider == "tencent" {
-		return ctx.JSON(http.StatusBadRequest, map[string]string{"error": "Tencent is not supported now"})
-	}
-
-	creds, err := config.NewAuthManager().LoadCredentialsByProvider(ctx.Request().Context(), task.Provider)
+	creds, err := config.NewAuthManager().LoadCredentialsByProvider(ctx.Request().Context(), req.Provider)
 	if err != nil {
 		errStr := "credential load failed: " + err.Error()
 		logger.Error().Msg(errStr)
 		return ctx.JSON(http.StatusBadRequest, map[string]string{"error": errStr})
 	}
 
-	accessKey, secretKey, err := warp.ResolveS3Keys(task.Provider, creds)
+	accessKey, secretKey, err := warp.ResolveS3Keys(req.Provider, creds)
 	if err != nil {
 		errStr := err.Error()
 		logger.Error().Msg(errStr)
 		return ctx.JSON(http.StatusBadRequest, map[string]string{"error": errStr})
 	}
 
-	host, err := warp.Endpoint(task.Provider, task.Region)
+	host, err := warp.Endpoint(req.Provider, req.Region)
+	if err != nil {
+		errStr := err.Error()
+		logger.Error().Msg(errStr)
+		return ctx.JSON(http.StatusBadRequest, map[string]string{"error": errStr})
+	}
+
+	bucketName, err := warp.ResolveBucketName(req.Provider, accessKey, secretKey, req.BucketId)
 	if err != nil {
 		errStr := err.Error()
 		logger.Error().Msg(errStr)
@@ -209,20 +213,28 @@ func (d *DiagnoseHandler) PostWarpDiagnose(ctx echo.Context) error {
 
 	params := warp.RunParams{
 		Host:        host,
+		Region:      req.Region,
 		AccessKey:   accessKey,
 		SecretKey:   secretKey,
-		Bucket:      task.BucketId,
+		Bucket:      bucketName,
 		Prefix:      fmt.Sprintf("warp_diag_%d/", time.Now().UnixNano()),
-		Duration:    task.DurationSec,
-		ObjectSize:  task.ObjectKib,
-		ObjectCount: task.ObjectCount,
-		ExtraArgs:   warp.ExtraArgs(task.Provider),
+		Duration:    req.DurationSec,
+		ObjectSize:  req.ObjectKib,
+		ObjectCount: req.ObjectCount,
+		ExtraArgs:   warp.ExtraArgs(req.Provider),
 	}
 
 	defer func() {
-		if err := warp.DeletePrefix(ctx.Request().Context(), params); err != nil {
-			logger.Error().Err(err).Msg("failed to clean up warp benchmark prefix")
-		}
+		go func() {
+			deleteCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			err := warp.DeletePrefix(deleteCtx, params)
+			if err != nil {
+				logger.Error().Err(err).Msg("failed to clean up warp benchmark prefix")
+			} else {
+				logger.Info().Msg("Successfully delete benchmark prefix")
+			}
+		}()
 	}()
 
 	out, err := warp.RunWarp(ctx.Request().Context(), params)

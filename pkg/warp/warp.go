@@ -7,15 +7,21 @@ import (
 	"fmt"
 	"os/exec"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
+	awssdk "github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/cloud-barista/mc-data-manager/config"
 	"github.com/cloud-barista/mc-data-manager/models"
 )
 
 // RunParams holds the fully-resolved values needed to invoke the warp binary.
 type RunParams struct {
 	Host        string
+	Region      string
 	AccessKey   string
 	SecretKey   string
 	Bucket      string
@@ -172,7 +178,45 @@ func ParseWarpOutput(out []byte) (models.WarpParsed, error) {
 	return parsed, nil
 }
 
-// DeletePrefix removes all objects under params.Prefix in params.Bucket. Not yet implemented.
+// DeletePrefix removes all objects under params.Prefix in params.Bucket, calling
+// the S3-compatible API directly with the same credentials/endpoint used for the
+// warp run (list, then batch-delete — S3 has no native prefix-delete operation).
 func DeletePrefix(ctx context.Context, params RunParams) error {
+	usePathStyle := !slices.Contains(params.ExtraArgs, "--lookup=host")
+	client, err := config.NewS3ClientWithEndpointStyle(params.AccessKey, params.SecretKey, params.Region, "https://"+params.Host, usePathStyle)
+	if err != nil {
+		return fmt.Errorf("failed to create S3 client: %w", err)
+	}
+
+	var objects []types.ObjectIdentifier
+	var continuationToken *string
+	for {
+		out, err := client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket:            awssdk.String(params.Bucket),
+			Prefix:            awssdk.String(params.Prefix),
+			ContinuationToken: continuationToken,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to list objects under prefix %q: %w", params.Prefix, err)
+		}
+		for _, obj := range out.Contents {
+			objects = append(objects, types.ObjectIdentifier{Key: obj.Key})
+		}
+		if out.IsTruncated == nil || !*out.IsTruncated {
+			break
+		}
+		continuationToken = out.NextContinuationToken
+	}
+
+	// DeleteObjects accepts at most 1000 keys per call.
+	for i := 0; i < len(objects); i += 1000 {
+		end := min(i+1000, len(objects))
+		if _, err := client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+			Bucket: awssdk.String(params.Bucket),
+			Delete: &types.Delete{Objects: objects[i:end]},
+		}); err != nil {
+			return fmt.Errorf("failed to delete objects under prefix %q: %w", params.Prefix, err)
+		}
+	}
 	return nil
 }

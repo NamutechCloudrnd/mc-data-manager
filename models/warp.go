@@ -1,12 +1,12 @@
 package models
 
-// WarpDiagnosticTask is the request body for the object storage warp diagnose endpoint.
-type WarpDiagnosticTask struct {
+// WarpDiagnosticRequest is the request body for the object storage warp diagnose endpoint.
+type WarpDiagnosticRequest struct {
 	ProviderParams
 	RegionParams
 	BucketId    string `json:"bucketId" form:"bucketId"`
 	DurationSec int64  `json:"durationSec" form:"durationSec"`
-	ObjectKib 	int64  `json:"objectKib" form:"objectKib"` // in KB
+	ObjectKib   int64  `json:"objectKib" form:"objectKib"` // in KB
 	ObjectCount int64  `json:"objectCount" form:"objectCount"`
 }
 
