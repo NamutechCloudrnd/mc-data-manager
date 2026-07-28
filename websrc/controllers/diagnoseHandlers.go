@@ -5,10 +5,12 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/cloud-barista/mc-data-manager/config"
 	"github.com/cloud-barista/mc-data-manager/internal/auth"
 	"github.com/cloud-barista/mc-data-manager/models"
 	"github.com/cloud-barista/mc-data-manager/pkg/rdbms/mysql/diagnostics"
 	"github.com/cloud-barista/mc-data-manager/pkg/sysbench"
+	"github.com/cloud-barista/mc-data-manager/pkg/warp"
 	"github.com/labstack/echo/v4"
 	"github.com/rs/zerolog"
 )
@@ -167,6 +169,79 @@ func (d *DiagnoseHandler) PostSysbenchDiagnose(ctx echo.Context) error {
 		SysbenchResult: res,
 		Error:          nil,
 	})
+}
+
+func (d *DiagnoseHandler) PostWarpDiagnose(ctx echo.Context) error {
+	start := time.Now()
+	logger, _ := pageLogInit(ctx, "Diagnose-task", "Diagnose object storage warp", start)
+
+	task := models.WarpDiagnosticTask{}
+	if !getDataWithReBind(logger, start, ctx, &task) {
+		errStr := "Invalid request data"
+		logger.Error().Msg(errStr)
+		return ctx.JSON(http.StatusBadRequest, map[string]string{"error": errStr})
+	}
+
+	if task.Provider == "tencent" {
+		return ctx.JSON(http.StatusBadRequest, map[string]string{"error": "Tencent is not supported now"})
+	}
+
+	creds, err := config.NewAuthManager().LoadCredentialsByProvider(ctx.Request().Context(), task.Provider)
+	if err != nil {
+		errStr := "credential load failed: " + err.Error()
+		logger.Error().Msg(errStr)
+		return ctx.JSON(http.StatusBadRequest, map[string]string{"error": errStr})
+	}
+
+	accessKey, secretKey, err := warp.ResolveS3Keys(task.Provider, creds)
+	if err != nil {
+		errStr := err.Error()
+		logger.Error().Msg(errStr)
+		return ctx.JSON(http.StatusBadRequest, map[string]string{"error": errStr})
+	}
+
+	host, err := warp.Endpoint(task.Provider, task.Region)
+	if err != nil {
+		errStr := err.Error()
+		logger.Error().Msg(errStr)
+		return ctx.JSON(http.StatusBadRequest, map[string]string{"error": errStr})
+	}
+
+	params := warp.RunParams{
+		Host:        host,
+		AccessKey:   accessKey,
+		SecretKey:   secretKey,
+		Bucket:      task.BucketId,
+		Prefix:      fmt.Sprintf("warp_diag_%d/", time.Now().UnixNano()),
+		Duration:    task.DurationSec,
+		ObjectSize:  task.ObjectKib,
+		ObjectCount: task.ObjectCount,
+		ExtraArgs:   warp.ExtraArgs(task.Provider),
+	}
+
+	defer func() {
+		if err := warp.DeletePrefix(ctx.Request().Context(), params); err != nil {
+			logger.Error().Err(err).Msg("failed to clean up warp benchmark prefix")
+		}
+	}()
+
+	out, err := warp.RunWarp(ctx.Request().Context(), params)
+	if err != nil {
+		errStr := err.Error()
+		logger.Error().Msg(errStr)
+		return ctx.JSON(http.StatusBadRequest, map[string]string{"error": errStr})
+	}
+
+	result, err := warp.ParseWarpOutput(out)
+	if err != nil {
+		errStr := err.Error()
+		logger.Error().Msg(errStr)
+		return ctx.JSON(http.StatusBadRequest, map[string]string{"error": errStr})
+	}
+	logger.Info().Msg(result.Raw)
+
+	jobEnd(logger, "Successfully diagnosed object storage", start)
+	return ctx.JSON(http.StatusOK, result)
 }
 
 func logDiagnose(logger *zerolog.Logger, result diagnostics.TimedResult) {
