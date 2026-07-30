@@ -11,7 +11,9 @@ import (
 	"regexp"
 	"strconv"
 
+	"github.com/cloud-barista/mc-data-manager/config"
 	"github.com/cloud-barista/mc-data-manager/models"
+	"go.mongodb.org/mongo-driver/mongo"
 )
 
 func RunYCSB(ctx context.Context, phase, binding string, env []string, args ...string) ([]byte, error) {
@@ -123,7 +125,27 @@ func usToMs(s string) float64 {
 
 // DropMongoCollection removes the collection created for a mongodb diagnose run
 // (ncp/alibaba only — dynamodb cleans up itself via dynamodb.delete.after.run.stage).
-// Not yet implemented.
+// go-ycsb's mongodb binding always writes to the "ycsb" database, so only the
+// collection named after the diagnose table is dropped.
 func DropMongoCollection(ctx context.Context, provider, host, port, username, password, table string) error {
-	return nil
+	portNum, err := strconv.Atoi(port)
+	if err != nil {
+		return fmt.Errorf("invalid port %q: %w", port, err)
+	}
+
+	var client *mongo.Client
+	switch provider {
+	case "ncp":
+		client, err = config.NewNCPMongoDBClient(username, password, host, portNum)
+	case "alibaba":
+		client, err = config.NewAlibabaMongoDBClient(username, password, host, portNum)
+	default:
+		return fmt.Errorf("unsupported provider for mongodb cleanup: %s", provider)
+	}
+	if err != nil {
+		return fmt.Errorf("mongodb connect failed: %w", err)
+	}
+	defer func() { _ = client.Disconnect(ctx) }()
+
+	return client.Database("ycsb").Collection(table).Drop(ctx)
 }
