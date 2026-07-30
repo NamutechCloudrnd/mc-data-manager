@@ -3,6 +3,7 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"math"
 	"net/http"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/cloud-barista/mc-data-manager/pkg/rdbms/mysql/diagnostics"
 	"github.com/cloud-barista/mc-data-manager/pkg/sysbench"
 	"github.com/cloud-barista/mc-data-manager/pkg/warp"
+	"github.com/cloud-barista/mc-data-manager/pkg/ycsb"
 	"github.com/labstack/echo/v4"
 	"github.com/rs/zerolog"
 )
@@ -253,6 +255,97 @@ func (d *DiagnoseHandler) PostWarpDiagnose(ctx echo.Context) error {
 	logger.Info().Msg(result.Raw)
 
 	jobEnd(logger, "Successfully diagnosed object storage", start)
+	return ctx.JSON(http.StatusOK, result)
+}
+
+func (d *DiagnoseHandler) PostYcsbDiagnose(ctx echo.Context) error {
+	start := time.Now()
+	logger, _ := pageLogInit(ctx, "Diagnose-task", "Diagnose NRDB ycsb", start)
+
+	req := models.YcsbDiagnosticRequest{}
+	if !getDataWithReBind(logger, start, ctx, &req) {
+		errStr := "Invalid request data"
+		logger.Error().Msg(errStr)
+		return ctx.JSON(http.StatusBadRequest, map[string]string{"error": errStr})
+	}
+
+	if req.RecordCount <= 0 || req.ThreadCount <= 0 {
+		errStr := "recordCount and threadCount must be greater than 0"
+		logger.Error().Msg(errStr)
+		return ctx.JSON(http.StatusBadRequest, map[string]string{"error": errStr})
+	}
+	if req.ReadProportion < 0 || req.UpdateProportion < 0 ||
+		math.Abs(req.ReadProportion+req.UpdateProportion-1) > 1e-9 {
+		errStr := "readProportion and updateProportion must sum to 1"
+		logger.Error().Msg(errStr)
+		return ctx.JSON(http.StatusBadRequest, map[string]string{"error": errStr})
+	}
+
+	// Run the benchmark against a dedicated, throwaway table so it can't touch real data.
+	tableName := fmt.Sprintf("ycsb_diag_%d", time.Now().UnixNano())
+
+	var binding string
+	var env []string
+	args := ycsb.BuildWorkloadArgs(req)
+	switch req.Provider {
+	case "aws":
+		binding = "dynamodb"
+		accessKey, secretKey, err := ycsb.ResolveAWSCredentials(ctx.Request().Context())
+		if err != nil {
+			errStr := err.Error()
+			logger.Error().Msg(errStr)
+			return ctx.JSON(http.StatusBadRequest, map[string]string{"error": errStr})
+		}
+		var bindingArgs []string
+		env, bindingArgs = ycsb.BuildDynamoDBArgs(accessKey, secretKey, req.Region, tableName)
+		args = append(args, bindingArgs...)
+	case "ncp", "alibaba":
+		binding = "mongodb"
+		args = append(args, ycsb.BuildMongoDBArgs(req.Host, req.Port, req.Username, req.Password, tableName)...)
+		defer func() {
+			go func() {
+				dropCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+				defer cancel()
+				if err := ycsb.DropMongoCollection(dropCtx, req.Provider, req.Host, req.Port, req.Username, req.Password, tableName); err != nil {
+					logger.Error().Err(err).Msgf("failed to drop ycsb benchmark collection: %s", tableName)
+				} else {
+					logger.Info().Msg("Successfully dropped benchmark collection")
+				}
+			}()
+		}()
+	default:
+		errStr := fmt.Sprintf("unsupported provider for ycsb diagnose: %s", req.Provider)
+		logger.Error().Msg(errStr)
+		return ctx.JSON(http.StatusBadRequest, map[string]string{"error": errStr})
+	}
+
+	loadOut, err := ycsb.RunYCSB(ctx.Request().Context(), "load", binding, env, args...)
+	if err != nil {
+		errStr := err.Error()
+		logger.Error().Msg(errStr)
+		return ctx.JSON(http.StatusBadRequest, map[string]string{"error": errStr})
+	}
+
+	runOut, err := ycsb.RunYCSB(ctx.Request().Context(), "run", binding, env, args...)
+	if err != nil {
+		errStr := err.Error()
+		logger.Error().Msg(errStr)
+		return ctx.JSON(http.StatusBadRequest, map[string]string{"error": errStr})
+	}
+
+	// Parse the load and run phases together: raw and the parsed metrics
+	// should reflect both.
+	out := append(loadOut, runOut...)
+
+	result, err := ycsb.ParseYCSBOutput(out)
+	if err != nil {
+		errStr := err.Error()
+		logger.Error().Msg(errStr)
+		return ctx.JSON(http.StatusBadRequest, map[string]string{"error": errStr})
+	}
+	logger.Info().Msg(result.Raw)
+
+	jobEnd(logger, "Successfully diagnosed NRDB", start)
 	return ctx.JSON(http.StatusOK, result)
 }
 

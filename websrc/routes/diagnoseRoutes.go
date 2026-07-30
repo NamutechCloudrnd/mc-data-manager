@@ -30,5 +30,6 @@ func DiagnoseRoot(g *echo.Group) {
 	g.POST("/status", handler.PostStatusDiagnose)
 	g.POST("/sysbench", handler.PostSysbenchDiagnose)
 	g.POST("/warp", handler.PostWarpDiagnose)
+	g.POST("/ycsb", handler.PostYcsbDiagnose)
 	g.POST("/connection", handler.PostConnectionHandler)
 }
